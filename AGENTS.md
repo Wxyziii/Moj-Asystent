@@ -32,6 +32,17 @@ Project-specific reusable skills live under `.agents/skills/`. For a milestone t
 
 Use only the minimum relevant skill set. Product docs and explicit user instructions take precedence over generic workflow guidance in a skill.
 
+Cross-cutting skills are opt-in by task shape, not mandatory for every change:
+
+- `diagnosing-bugs` — difficult, intermittent or performance regressions.
+- `tdd` — backend behavior, state/protocol/tool logic and regressions; not pure visual styling.
+- `frontend-design` — substantial frontend or desktop UI design work.
+- `webapp-testing` — React and development-dashboard functional or visual verification; native Tauri behavior still needs native checks.
+- `gh-fix-ci` — failing GitHub Actions checks, using actual workflow logs.
+- `modern-python` — Python/FastAPI core tooling and conventions.
+- `property-based-testing` — broad input-domain or invariant testing where examples are insufficient.
+- `assistant-security-review` — tools, permissions, OS actions, local APIs, privacy and security-sensitive work.
+
 ## Product constraints
 
 - V1 is Windows-first and Polish-only.
