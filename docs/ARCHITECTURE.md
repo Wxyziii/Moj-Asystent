@@ -1,0 +1,290 @@
+# Architecture
+
+## High-level system
+
+```text
+Microphone / keyboard / overlay
+            |
+            v
++-----------------------------+
+| Desktop UI (Tauri + React)  |
+| overlay, tray, confirmations|
++-------------+---------------+
+              |
+       WebSocket / local API
+              |
+              v
++-----------------------------+
+| Assistant Core (Python)     |
+| state, routing, permissions |
++---+------------+------------+
+    |            |
+    |            +-------------------------------+
+    |                                            |
+    v                                            v
+Audio pipeline                             Context engine
+wake -> VAD -> STT                         window/UI/screen/system
+    |                                            |
+    +-------------------+------------------------+
+                        v
+                  Orchestrator
+                        |
+          +-------------+-------------+
+          |                           |
+          v                           v
+     deterministic                 local AI
+     direct paths                 model router
+          |                           |
+          +-------------+-------------+
+                        v
+                   Tool engine
+                        |
+                 Permission gate
+                        |
+                        v
+        Windows / files / apps / telemetry
+                        |
+                        v
+                response builder
+                        |
+                 overlay + TTS
+```
+
+## Components
+
+### 1. Desktop application
+
+Responsibilities:
+
+- system tray;
+- overlay windows;
+- global fallback shortcut;
+- onboarding;
+- settings;
+- approval cards;
+- progress/task UI;
+- user-selected screen region;
+- display of assistant state.
+
+The desktop UI should not contain model-specific business logic.
+
+### 2. Assistant core
+
+Long-running local service responsible for:
+
+- assistant state machine;
+- audio pipeline;
+- model routing;
+- tool registry;
+- permissions;
+- context gathering;
+- watchers;
+- persistence;
+- response construction.
+
+Use typed internal events so the UI can be replaced without rewriting core behavior.
+
+### 3. Audio pipeline
+
+Idle path must remain cheap:
+
+```text
+microphone
+   -> rolling in-memory buffer
+   -> openWakeWord
+   -> no wake: discard
+   -> wake: LISTENING
+   -> Silero VAD determines utterance end
+   -> faster-whisper (language=pl)
+   -> orchestrator
+```
+
+Raw recordings are not persisted by default.
+
+### 4. Context engine
+
+Build one normalized context snapshot from available sources:
+
+```json
+{
+  "active_application": "Visual Studio Code",
+  "window_title": "resolver.ts",
+  "ui": {},
+  "selection": null,
+  "screenshot_available": true,
+  "system": {
+    "cpu_percent": 31,
+    "gpu_percent": 62,
+    "vram_used_mb": 5200
+  }
+}
+```
+
+Do not collect every field for every request. Context providers should be lazy and request-scoped.
+
+### 5. Orchestrator
+
+Responsibilities:
+
+- understand user intent;
+- decide whether deterministic routing is sufficient;
+- choose model tier when AI is required;
+- request relevant context providers;
+- manage tool-call loops;
+- construct concise spoken answer + richer visual answer;
+- preserve follow-up context for a short conversation window.
+
+The model is advisory until a typed tool passes validation and authorization.
+
+### 6. Model providers
+
+Interface example:
+
+```python
+class ModelProvider(Protocol):
+    async def chat(self, request: ModelRequest) -> ModelResponse: ...
+```
+
+Initial providers:
+
+- Ollama/Qwen3.5 4B;
+- optional Ollama/Qwen3.5 9B;
+- llama.cpp hybrid provider for larger models.
+
+Model selection is not a UI concern.
+
+### 7. Tool engine
+
+Each tool declares:
+
+- stable name;
+- typed arguments;
+- return schema;
+- permission class;
+- optional app/path allowlist requirement;
+- timeout;
+- audit metadata.
+
+Example:
+
+```python
+@tool(name="set_application_volume", permission="write.safe")
+async def set_application_volume(application: str, volume: int) -> ToolResult:
+    ...
+```
+
+Do not make `run_any_shell_command` a normal tool.
+
+### 8. Permission engine
+
+Authorization occurs after intent/tool selection and before execution.
+
+Permission classes:
+
+- `read`
+- `write.safe`
+- `sensitive`
+
+Policy can include per-tool, per-app, per-path and one-time approvals.
+
+### 9. Watcher engine
+
+Watchers use ordinary event/process/window/file APIs and only escalate to AI when interpretation is necessary.
+
+```text
+OS event -> cheap rule -> relevant? -> collect context -> AI if needed -> notification
+```
+
+This prevents continuous LLM/vision use.
+
+### 10. Persistence
+
+SQLite stores structured state:
+
+- settings;
+- permissions;
+- conversation metadata;
+- user-approved memories;
+- aliases;
+- routines;
+- watchers;
+- action/audit history.
+
+Screenshots, microphone recordings and model prompts containing sensitive context should not be retained by default.
+
+## Process model
+
+Preferred initial process layout:
+
+```text
+Moj-Asystent.exe / Tauri desktop
+        |
+        +--> local core service process
+                 |
+                 +--> Ollama / llama.cpp runtime
+```
+
+The desktop app owns lifecycle/startup UX; the core owns assistant behavior.
+
+## Communication protocol
+
+Use a shared schema package for messages such as:
+
+- `assistant.state.changed`
+- `audio.transcript.partial`
+- `audio.transcript.final`
+- `assistant.response.delta`
+- `assistant.response.completed`
+- `tool.requested`
+- `tool.confirmation.required`
+- `tool.completed`
+- `context.screen.inspecting`
+- `watcher.triggered`
+- `system.health`
+
+Messages should include IDs so long-running actions can be correlated.
+
+## Screen-awareness strategy
+
+Priority:
+
+1. active application and window title;
+2. Windows UI Automation;
+3. known structured logs/integrations;
+4. selected region or active-window screenshot;
+5. full monitor screenshot only when explicitly necessary.
+
+Never run continuous image inference simply to know whether something changed.
+
+## Model routing strategy
+
+```text
+simple known command -> deterministic intent/tool
+normal conversation/tool reasoning -> Qwen3.5 4B
+harder local task -> Qwen3.5 9B if resources permit
+explicit/deep complex task -> larger llama.cpp hybrid tier
+```
+
+Before loading a larger tier, check available VRAM/RAM and current gaming/high-load state.
+
+## Failure model
+
+Every external subsystem can fail independently:
+
+- wake-word engine unavailable -> fallback hotkey/text works;
+- STT unavailable -> typed chat works;
+- TTS unavailable -> overlay text works;
+- model unavailable -> deterministic tools still work where safe;
+- UI Automation unavailable -> optional screenshot path;
+- telemetry source unavailable -> report missing metric, never fabricate;
+- tool failure -> surface actual tool result and recovery options.
+
+## Privacy defaults
+
+- wake audio processed locally;
+- rolling buffer in RAM only;
+- no screenshot storage by default;
+- no cloud calls by default;
+- obvious visual indicator during active listening/screen inspection;
+- configurable excluded applications/windows;
+- secrets/password fields should be redacted or excluded when detectable.
