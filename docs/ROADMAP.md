@@ -46,7 +46,7 @@ Completed scope:
 
 ## Milestone 2 — Core service/protocol
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -56,6 +56,13 @@ Deliverables:
 - assistant state machine;
 - health/lifecycle handling;
 - provider interfaces.
+
+Completed scope:
+
+- local-only FastAPI core on `127.0.0.1` with lifecycle, health endpoint and validated WebSocket handshake;
+- protocol-v1 schema, Python Pydantic models and TypeScript runtime parser;
+- deterministic assistant state machine, privacy-safe lifecycle logs and fail-closed mock LLM/STT/TTS/wake-word providers;
+- desktop health/WebSocket client with a visible graceful disconnected state.
 
 ## Milestone 3 — Polish voice pipeline
 

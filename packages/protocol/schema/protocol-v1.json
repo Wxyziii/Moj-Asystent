@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moj-asystent.local/protocol/v1",
+  "title": "Mój Asystent protocol v1",
+  "description": "Source contract for local desktop-to-core events. Both implementations reject unknown fields.",
+  "type": "object",
+  "required": ["protocol_version", "event_id", "occurred_at", "correlation_id", "type", "payload"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "event_id": { "type": "string", "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "correlation_id": { "type": ["string", "null"], "format": "uuid" },
+    "type": { "enum": ["client.hello", "system.health", "assistant.state.changed", "system.error"] },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

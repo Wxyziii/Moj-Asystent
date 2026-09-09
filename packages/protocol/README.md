@@ -1,6 +1,6 @@
 # Shared Protocol
 
-This package will define the stable messages exchanged between the Tauri desktop app and the Python core service.
+This package defines the stable messages exchanged between the Tauri desktop app and the Python core service.
 
 ## Goals
 
@@ -24,6 +24,14 @@ This package will define the stable messages exchanged between the Tauri desktop
 - `context.screen.inspecting`
 - `watcher.triggered`
 
-## First implementation task
+## Protocol v1
 
-Choose one schema source of truth (JSON Schema, TypeSpec, or another maintainable option), generate/validate both Python and TypeScript representations, and add protocol round-trip tests.
+`schema/protocol-v1.json` is the versioned wire-contract source. The
+TypeScript runtime parser and the core's Pydantic models both accept only the
+current v1 events: `client.hello`, `system.health`,
+`assistant.state.changed` and `system.error`.
+
+Every envelope includes `protocol_version`, `event_id`, `occurred_at` and a
+nullable `correlation_id`. Unknown fields, event types and incompatible
+versions are rejected. Additive changes require a supported minor version;
+breaking changes require a new major version.

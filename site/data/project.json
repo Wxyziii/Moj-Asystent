@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Desktop shell",
-    "status": "Milestone 1 complete — simulated desktop overlay",
+    "stage": "Core service & protocol",
+    "status": "Milestone 2 complete — local FastAPI core and typed desktop protocol",
     "updated": "2026-09-09"
   },
   "principles": [
@@ -25,7 +25,7 @@
   "milestones": [
     { "id": 0, "name": "Foundation", "status": "done", "description": "Architecture, docs, Codex instructions and development site." },
     { "id": 1, "name": "Desktop shell", "status": "done", "description": "Tauri overlay, tray, shortcut and simulated assistant UI states." },
-    { "id": 2, "name": "Core service", "status": "planned", "description": "FastAPI core, WebSocket protocol and assistant state machine." },
+    { "id": 2, "name": "Core service", "status": "done", "description": "Local FastAPI core, versioned WebSocket protocol and assistant state machine." },
     { "id": 3, "name": "Polish voice", "status": "planned", "description": "Wake word, VAD, forced-Polish STT, TTS and follow-up mode." },
     { "id": 4, "name": "Custom wake name", "status": "planned", "description": "Guided name training, hard negatives, validation and retraining." },
     { "id": 5, "name": "Local AI", "status": "planned", "description": "Qwen3.5 4B, Polish prompt, streaming and model lifecycle." },
@@ -37,6 +37,16 @@
     { "id": 11, "name": "Deep model routing", "status": "planned", "description": "Quality tier and optional CPU/GPU hybrid reasoning." }
   ],
   "changelog": [
+    {
+      "date": "2026-09-09",
+      "title": "Milestone 2: local core and protocol",
+      "items": [
+        "Added a localhost-only Python 3.12 FastAPI core with health and WebSocket handshake.",
+        "Added protocol-v1 contracts for health, assistant states and safe error handling.",
+        "Connected the desktop overlay to core health and graceful disconnected states.",
+        "Added deterministic state, protocol and provider-interface tests."
+      ]
+    },
     {
       "date": "2026-09-09",
       "title": "Milestone 1: desktop shell",

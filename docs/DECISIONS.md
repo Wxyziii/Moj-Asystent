@@ -1,5 +1,13 @@
 # Decision Log
 
+## 2026-09-09 — Versioned local protocol boundary
+
+Decision: desktop and core exchange explicit protocol-v1 envelopes over a localhost-only HTTP/WebSocket boundary. Every event contains a protocol version, event ID, UTC timestamp and nullable correlation ID. Unknown event types, extra fields and incompatible versions are rejected before they reach assistant state handling.
+
+Compatibility rule: additive, backward-compatible changes may increment the minor protocol version after both consumers support them. Any breaking schema or behavior change requires a new major version and is rejected by older clients.
+
+Reason: it allows the Tauri UI and Python core to evolve independently without treating local payloads as trusted or silently changing assistant behavior.
+
 This file records product/architecture decisions that should not be silently changed.
 
 ## 2026-09-09 — Polish-only V1

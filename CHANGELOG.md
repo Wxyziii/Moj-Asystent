@@ -6,6 +6,11 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 2 local assistant core under `services/core`, using Python 3.12, FastAPI and a localhost-only HTTP/WebSocket boundary.
+- Protocol v1 schemas and typed Python/TypeScript message contracts for health, handshake, assistant-state and error events.
+- Desktop health/handshake client with clear Polish connected, connecting and disconnected states while retaining UI simulation controls.
+- Deterministic assistant-state validation, fail-closed mock LLM/STT/TTS/wake-word provider interfaces and protocol/API test coverage.
+
 - Milestone 1 desktop foundation under `apps/desktop`: Tauri 2, React and TypeScript application shell.
 - Frameless always-on-top overlay with compact listening bubble, expanded Polish conversation view and settings shell.
 - System tray menu, global `Ctrl` + `Shift` + `Spacja` fallback shortcut, hide/show behavior and responsive desktop window sizing.
@@ -30,6 +35,8 @@ All notable project changes are tracked here.
 - Codex-oriented `AGENTS.md` repository map and source-of-truth documentation structure.
 
 ### Decisions
+
+- Protocol v1 uses a major/minor version envelope and rejects incompatible major versions before state changes.
 
 - V1 is Polish-only.
 - Local processing is the default.

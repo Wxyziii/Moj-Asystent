@@ -10,6 +10,7 @@ import {
   AssistantState,
   AssistantStateDefinition,
 } from "../domain/assistant";
+import type { CoreConnectionStatus } from "../lib/coreClient";
 import { StatusOrb } from "./StatusOrb";
 import { Waveform } from "./Waveform";
 
@@ -20,6 +21,7 @@ interface ConversationProps {
   onSettings: () => void;
   onStateChange: (state: AssistantState) => void;
   onPreviewState: (state: AssistantState) => void;
+  coreStatus: CoreConnectionStatus;
 }
 
 export function Conversation({
@@ -29,6 +31,7 @@ export function Conversation({
   onSettings,
   onStateChange,
   onPreviewState,
+  coreStatus,
 }: ConversationProps) {
   const isWorking = ["thinking", "transcribing", "speaking"].includes(state);
   const isListening = ["listening", "wake_detected", "follow_up"].includes(
@@ -60,8 +63,19 @@ export function Conversation({
           className="conversation__header-actions"
           data-tauri-drag-region="false"
         >
-          <span className="health-chip">
-            <StatusOrb definition={definition} /> Symulacja
+          <span className="health-chip" aria-label={`Rdzeń: ${coreStatus}`}>
+            <StatusOrb
+              definition={
+                coreStatus === "disconnected"
+                  ? { ...definition, tone: "danger" }
+                  : definition
+              }
+            />{" "}
+            {coreStatus === "connected"
+              ? "Rdzeń połączony"
+              : coreStatus === "connecting"
+                ? "Łączenie z rdzeniem"
+                : "Rdzeń niedostępny"}
           </span>
           <button
             className="icon-button"
@@ -85,9 +99,8 @@ export function Conversation({
         <article className="message message--assistant">
           <p className="message__label">Mój Asystent</p>
           <p>
-            W tej wersji pokazuję tylko interfejs. Gdy połączymy usługę w
-            kolejnym etapie, tu pojawi się odpowiedź oparta na aktualnym
-            kontekście.
+            Rdzeń lokalny jest gotowy do wymiany stanów. Odpowiedzi AI i
+            przetwarzanie głosu pozostają celowo poza tym etapem.
           </p>
           <div className="suggestion-row">
             <button onClick={() => onStateChange("thinking")}>

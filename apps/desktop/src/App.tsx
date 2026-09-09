@@ -13,6 +13,7 @@ import { hideOverlay, requestDesktopMode } from "./lib/desktop";
 export default function App() {
   const {
     assistantState,
+    coreStatus,
     overlayMode,
     setOverlayMode,
     transitionTo,
@@ -61,6 +62,7 @@ export default function App() {
         onSettings={() => changeMode("settings")}
         onStateChange={transitionTo}
         onPreviewState={previewState}
+        coreStatus={coreStatus}
       />
     );
   return (

@@ -1,7 +1,7 @@
 {
   "name": "moj-asystent-workspace",
   "private": true,
-  "workspaces": ["apps/desktop"],
+  "workspaces": ["apps/desktop", "packages/protocol"],
   "scripts": {
     "dev": "npm --workspace @moj-asystent/desktop run dev",
     "build": "npm --workspace @moj-asystent/desktop run build",

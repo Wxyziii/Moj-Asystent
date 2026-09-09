@@ -1,15 +1,6 @@
-export const assistantStates = [
-  "idle",
-  "wake_detected",
-  "listening",
-  "transcribing",
-  "thinking",
-  "speaking",
-  "follow_up",
-  "error",
-] as const;
-
-export type AssistantState = (typeof assistantStates)[number];
+export { assistantStates } from "@moj-asystent/protocol";
+export type { AssistantState } from "@moj-asystent/protocol";
+import type { AssistantState } from "@moj-asystent/protocol";
 export type OverlayMode = "compact" | "expanded" | "settings";
 
 export interface AssistantStateDefinition {

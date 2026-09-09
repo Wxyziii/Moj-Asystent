@@ -2,7 +2,18 @@
 
 Target: **Python 3.12 + FastAPI + WebSocket**.
 
-This directory will contain the long-running local assistant service.
+This directory contains the long-running local assistant service. Milestone 2
+provides a Python 3.12 FastAPI boundary at `127.0.0.1:8765` by default.
+
+## Running locally
+
+Run `uv sync --all-groups`, then `uv run moj-asystent-core` from this directory.
+The service exposes `GET /health` and `/ws`. WebSocket clients must send a
+protocol-v1 `client.hello` before receiving health and state synchronization.
+Invalid origin, size, schema and protocol-version inputs are rejected.
+
+No model, audio, microphone, screen, tool or persistence implementation is
+included at this stage.
 
 ## Responsibilities
 
@@ -48,13 +59,5 @@ services/core/
       watchers/
       state/
 ```
-
-## First implementation tasks
-
-1. Create the Python package and dependency management.
-2. Implement FastAPI health endpoint + WebSocket.
-3. Implement typed assistant-state events.
-4. Add provider protocols with fake/test implementations.
-5. Connect desktop shell to simulated core events before adding model/audio dependencies.
 
 See `docs/ARCHITECTURE.md` and `docs/IMPLEMENTATION_PLAN.md`.
