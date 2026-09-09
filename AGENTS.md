@@ -12,6 +12,8 @@ Read, in this order:
 4. The feature-specific document relevant to the task.
 5. `docs/DECISIONS.md` for constraints already decided.
 
+For any desktop/UI work, also read both `docs/OVERLAY_UI.md` and `docs/UI_STYLE.md` before changing visuals.
+
 Do not silently contradict an existing decision. If a task requires changing one, update `docs/DECISIONS.md` in the same change.
 
 ## Repository Codex skills
@@ -34,6 +36,7 @@ Use only the minimum relevant skill set. Product docs and explicit user instruct
 
 - V1 is Windows-first and Polish-only.
 - The assistant's public name is never hardcoded. The user chooses and trains it during onboarding.
+- The desktop UI is black, minimalistic and restrained by default: grayscale-first, high-contrast, Apple/iOS-inspired clarity adapted to Windows, and no generic purple/blue gradient "AI app" styling. `docs/UI_STYLE.md` is the visual source of truth.
 - Wake-word detection is lightweight and always available when enabled; full STT/LLM processing starts after wake.
 - Prefer structured OS/app context over screenshots.
 - Never continuously send the screen to the LLM.
