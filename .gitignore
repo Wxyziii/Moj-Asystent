@@ -1,0 +1,86 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+.pnpm-store/
+.yarn/
+.npm/
+coverage/
+.vite/
+.next/
+
+# Tauri / Rust
+target/
+apps/desktop/src-tauri/target/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local databases / state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/local/
+logs/
+
+# AI models and caches
+models/**/*.bin
+models/**/*.gguf
+models/**/*.onnx
+models/**/*.pt
+models/**/*.pth
+models/**/*.safetensors
+models/**/*.ckpt
+model-cache/
+.cache/
+
+# Wake-word training / voice data
+recordings/
+training-data/
+wakeword-data/
+models/wakewords/user/
+*.wav
+*.flac
+*.mp3
+*.m4a
+
+# Screen captures / private diagnostics
+screenshots/
+captures/
+debug-dumps/
+
+# Local generated files
+.tmp/
+tmp/
+temp/
+*.log
+
+# Packaging
+*.msi
+*.exe
+*.zip
+*.7z
