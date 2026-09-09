@@ -14,6 +14,22 @@ Read, in this order:
 
 Do not silently contradict an existing decision. If a task requires changing one, update `docs/DECISIONS.md` in the same change.
 
+## Repository Codex skills
+
+Project-specific reusable skills live under `.agents/skills/`. For a milestone task, use `milestone-executor` plus the narrow subsystem skill that matches the current phase. If repo-local skills are not shown in the current Codex skill list, read the relevant `SKILL.md` directly from the paths below and follow it as project guidance.
+
+- all numbered milestone work: `.agents/skills/milestone-executor/SKILL.md`
+- Phase 1 desktop/overlay: `.agents/skills/tauri-overlay-foundation/SKILL.md`
+- Phase 2 core/protocol/state: `.agents/skills/core-protocol-state/SKILL.md`
+- Phase 3 Polish voice pipeline: `.agents/skills/polish-audio-pipeline/SKILL.md`
+- Phase 4 custom assistant name/wake training: `.agents/skills/custom-wakeword-onboarding/SKILL.md`
+- Phase 5 and Phase 12 local AI/model routing: `.agents/skills/local-ai-runtime/SKILL.md`
+- Phase 6 tools/permissions/system actions: `.agents/skills/safe-tools-permissions/SKILL.md`
+- Phases 7-9 Windows context/vision/diagnostics: `.agents/skills/windows-context-diagnostics/SKILL.md`
+- Phases 10-11 memory/routines/watchers: `.agents/skills/memory-routines-watchers/SKILL.md`
+
+Use only the minimum relevant skill set. Product docs and explicit user instructions take precedence over generic workflow guidance in a skill.
+
 ## Product constraints
 
 - V1 is Windows-first and Polish-only.
