@@ -1,0 +1,75 @@
+# Mój Asystent
+
+A local-first, Polish-only desktop AI assistant for Windows with voice activation, an overlay chat interface, screen awareness, system telemetry, memory, and controlled tool execution.
+
+> Project status: **Planning / foundation**
+
+## Product goal
+
+Build an assistant that feels native to the PC rather than like a chatbot in a separate window. The assistant should be available by voice through a user-trained wake name, appear as a lightweight desktop overlay, understand the current screen and system state, and carry out approved actions through deterministic tools.
+
+Example target interaction:
+
+1. User says the custom assistant name.
+2. The assistant wakes without a hotkey and opens a compact overlay.
+3. User asks in Polish: `Dlaczego ten program nie działa?`
+4. The assistant reads the active-window context and UI Automation tree, captures a screenshot only if needed, and checks relevant telemetry.
+5. The local model explains the problem in Polish.
+6. The overlay offers explicit actions such as `Wyjaśnij`, `Napraw`, or `Pokaż szczegóły`.
+7. Any sensitive action requires confirmation.
+
+## V1 principles
+
+- Polish-only speech and responses.
+- Local-first processing.
+- Custom assistant name trained during onboarding.
+- Wake-word detection runs continuously; full speech recognition starts only after wake.
+- Overlay is the primary visual interface.
+- Structured Windows information is preferred over screenshots.
+- The LLM decides **what** should happen; deterministic code decides **how** it happens; permissions decide **whether** it may happen.
+- No unrestricted shell access for the everyday assistant.
+- No continuous full-screen vision processing.
+
+## Planned stack
+
+- **Desktop:** Tauri 2 + React + TypeScript
+- **Native desktop integration:** Rust
+- **Assistant service:** Python 3.12 + FastAPI + WebSocket
+- **Main local model:** Qwen3.5 4B
+- **Quality model:** Qwen3.5 9B
+- **Experimental deep model:** Qwen3.5 27B using CPU/GPU hybrid inference
+- **Model runtime:** Ollama first, llama.cpp for advanced offload/tuning
+- **Wake word:** openWakeWord
+- **VAD:** Silero VAD
+- **STT:** faster-whisper, Polish forced (`pl`)
+- **TTS:** Piper initially; XTTS-v2 evaluated later
+- **Memory:** SQLite
+- **Windows context:** UI Automation + active-window metadata + screenshots when required
+- **Telemetry:** psutil + NVIDIA NVML + Windows APIs
+
+## Documentation
+
+Start here:
+
+- [`AGENTS.md`](AGENTS.md) — Codex repository map and engineering rules
+- [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — phased implementation plan
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system architecture and data flow
+- [`docs/FEATURES.md`](docs/FEATURES.md) — product feature catalogue
+- [`docs/AI_MODELS.md`](docs/AI_MODELS.md) — model strategy and hardware routing
+- [`docs/VOICE_SYSTEM.md`](docs/VOICE_SYSTEM.md) — audio pipeline and conversation state machine
+- [`docs/WAKE_WORD_TRAINING.md`](docs/WAKE_WORD_TRAINING.md) — custom-name onboarding and training
+- [`docs/OVERLAY_UI.md`](docs/OVERLAY_UI.md) — overlay UX specification
+- [`docs/SECURITY.md`](docs/SECURITY.md) — permissions and safety boundaries
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones and release scope
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — architectural decision log
+- [`CHANGELOG.md`](CHANGELOG.md) — project changes
+
+## Development site
+
+A static development site lives in [`site/`](site/) and is intended for GitHub Pages. It presents the current development status, roadmap, architecture, and changelog in a more visual form than Markdown documents alone.
+
+The deployment workflow is in `.github/workflows/pages.yml`.
+
+## Status
+
+The repository is currently being prepared as a source-of-truth specification for Codex. Implementation should begin with the desktop shell and audio pipeline, following the phased plan in `docs/IMPLEMENTATION_PLAN.md`.
