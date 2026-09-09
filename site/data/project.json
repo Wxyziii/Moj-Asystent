@@ -1,0 +1,54 @@
+{
+  "project": {
+    "name": "Mój Asystent",
+    "tagline": "Polski, lokalny asystent AI dla Windows",
+    "stage": "Foundation",
+    "status": "Planning & repository setup",
+    "updated": "2026-09-09"
+  },
+  "principles": [
+    "Polish-only V1",
+    "Local-first",
+    "Custom trained wake name",
+    "Overlay-first UX",
+    "Structured context before screenshots",
+    "Typed tools + explicit permissions"
+  ],
+  "stack": [
+    { "label": "Desktop", "value": "Tauri 2 + React + TypeScript" },
+    { "label": "Core", "value": "Python 3.12 + FastAPI + WebSocket" },
+    { "label": "Main AI", "value": "Qwen3.5 4B via Ollama" },
+    { "label": "Voice", "value": "openWakeWord · Silero · faster-whisper · Piper" },
+    { "label": "Context", "value": "Windows UI Automation + selective vision" },
+    { "label": "Memory", "value": "SQLite" }
+  ],
+  "milestones": [
+    { "id": 0, "name": "Foundation", "status": "in_progress", "description": "Architecture, docs, Codex instructions and development site." },
+    { "id": 1, "name": "Desktop shell", "status": "planned", "description": "Tauri overlay, tray, shortcut and assistant UI states." },
+    { "id": 2, "name": "Core service", "status": "planned", "description": "FastAPI core, WebSocket protocol and assistant state machine." },
+    { "id": 3, "name": "Polish voice", "status": "planned", "description": "Wake word, VAD, forced-Polish STT, TTS and follow-up mode." },
+    { "id": 4, "name": "Custom wake name", "status": "planned", "description": "Guided name training, hard negatives, validation and retraining." },
+    { "id": 5, "name": "Local AI", "status": "planned", "description": "Qwen3.5 4B, Polish prompt, streaming and model lifecycle." },
+    { "id": 6, "name": "Tools & permissions", "status": "planned", "description": "Typed Windows tools, validation and confirmation cards." },
+    { "id": 7, "name": "Screen context", "status": "planned", "description": "Active window, UI Automation, screenshots and region selection." },
+    { "id": 8, "name": "Vision & diagnostics", "status": "planned", "description": "Multimodal screen understanding plus system/GPU telemetry." },
+    { "id": 9, "name": "Memory & routines", "status": "planned", "description": "SQLite memory, aliases, preferences and reusable routines." },
+    { "id": 10, "name": "Watchers", "status": "planned", "description": "Event-driven proactive monitoring and notifications." },
+    { "id": 11, "name": "Deep model routing", "status": "planned", "description": "Quality tier and optional CPU/GPU hybrid reasoning." }
+  ],
+  "changelog": [
+    {
+      "date": "2026-09-09",
+      "title": "Project foundation defined",
+      "items": [
+        "Defined Polish-only local-first V1 architecture.",
+        "Added custom assistant-name and guided wake-word training design.",
+        "Selected initial Tauri/React + Python/FastAPI architecture.",
+        "Defined Qwen3.5 model tiers, Polish voice pipeline and screen-awareness strategy.",
+        "Added typed tool and permission model.",
+        "Created Codex-ready source-of-truth documentation structure.",
+        "Added development-status website and Pages workflow."
+      ]
+    }
+  ]
+}
