@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Strona rozwoju projektu Mój Asystent — lokalnego asystenta AI dla Windows." />
+    <title>Mój Asystent — Development</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#top" aria-label="Mój Asystent">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span id="brand-name">Mój Asystent</span>
+        </a>
+        <nav class="nav" aria-label="Główna nawigacja">
+          <a href="#status">Status</a>
+          <a href="#roadmap">Roadmap</a>
+          <a href="#architecture">Architektura</a>
+          <a href="#changelog">Changelog</a>
+        </nav>
+        <a class="repo-link" href="https://github.com/Wxyziii/Moj-Asystent" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </header>
+
+      <main id="top">
+        <section class="hero">
+          <div class="eyebrow-row">
+            <span class="eyebrow">LOCAL-FIRST · WINDOWS · POLSKI</span>
+            <span class="status-dot-wrap"><span class="status-dot"></span><span id="hero-stage">Foundation</span></span>
+          </div>
+          <h1>Asystent, który<br /><span>naprawdę żyje na twoim PC.</span></h1>
+          <p class="hero-copy" id="hero-tagline">Polski, lokalny asystent AI dla Windows</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#roadmap">Zobacz roadmapę</a>
+            <a class="button secondary" href="https://github.com/Wxyziii/Moj-Asystent/blob/main/docs/IMPLEMENTATION_PLAN.md" target="_blank" rel="noreferrer">Plan techniczny</a>
+          </div>
+        </section>
+
+        <section class="section" id="status">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">01 / STATUS</span>
+              <h2>Aktualny etap</h2>
+            </div>
+            <span class="updated" id="updated-label">—</span>
+          </div>
+
+          <div class="status-grid">
+            <article class="feature-card featured">
+              <div class="card-topline">
+                <span>Aktualnie</span>
+                <span class="pulse"></span>
+              </div>
+              <h3 id="current-status">Ładowanie...</h3>
+              <p>Repozytorium jest źródłem prawdy dla architektury, roadmapy i decyzji. Ta strona prezentuje stan projektu w czytelniejszej formie.</p>
+            </article>
+            <article class="feature-card progress-card">
+              <div class="progress-ring" id="progress-ring"><span id="progress-number">0%</span></div>
+              <div>
+                <span class="muted-label">Postęp roadmapy</span>
+                <h3 id="milestone-summary">0 / 0 ukończonych</h3>
+                <p>Liczony automatycznie z statusów milestone'ów.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="principles" id="principles"></div>
+        </section>
+
+        <section class="section" id="roadmap">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">02 / ROADMAP</span>
+              <h2>Od fundamentu do V1</h2>
+            </div>
+            <span class="updated">Status na żywo z repo</span>
+          </div>
+          <div class="roadmap" id="roadmap-list"></div>
+        </section>
+
+        <section class="section" id="architecture">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">03 / ARCHITEKTURA</span>
+              <h2>Małe komponenty, jedna spójna całość</h2>
+            </div>
+          </div>
+
+          <div class="architecture-grid">
+            <article class="architecture-card">
+              <span class="architecture-index">A</span>
+              <h3>Nasłuchiwanie</h3>
+              <p>Wake word działa lekko w tle. Whisper i model AI startują dopiero, kiedy są potrzebne.</p>
+            </article>
+            <article class="architecture-card">
+              <span class="architecture-index">B</span>
+              <h3>Kontekst</h3>
+              <p>Najpierw aktywne okno i UI Automation. Screenshot dopiero wtedy, kiedy dane strukturalne nie wystarczają.</p>
+            </article>
+            <article class="architecture-card">
+              <span class="architecture-index">C</span>
+              <h3>AI</h3>
+              <p>Szybki model lokalny obsługuje codzienną pracę, a cięższy tryb może być ładowany tylko do trudnych zadań.</p>
+            </article>
+            <article class="architecture-card">
+              <span class="architecture-index">D</span>
+              <h3>Narzędzia</h3>
+              <p>Model wybiera akcję. Kod waliduje parametry. System uprawnień decyduje, czy akcja może zostać wykonana.</p>
+            </article>
+          </div>
+
+          <div class="stack-panel">
+            <div class="stack-title">
+              <span class="section-kicker">STACK</span>
+              <h3>Planowana technologia</h3>
+            </div>
+            <div class="stack-list" id="stack-list"></div>
+          </div>
+        </section>
+
+        <section class="section" id="changelog">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">04 / CHANGELOG</span>
+              <h2>Co się zmieniło</h2>
+            </div>
+            <a class="text-link" href="https://github.com/Wxyziii/Moj-Asystent/blob/main/CHANGELOG.md" target="_blank" rel="noreferrer">Pełny changelog ↗</a>
+          </div>
+          <div id="changelog-list" class="changelog-list"></div>
+        </section>
+      </main>
+
+      <footer>
+        <div>
+          <span class="brand footer-brand"><span class="brand-mark" aria-hidden="true"></span>Mój Asystent</span>
+          <p>Development dashboard · dane wersjonowane razem z kodem.</p>
+        </div>
+        <p class="footer-note">Projekt w fazie rozwoju. Specyfikacje w <code>docs/</code> są źródłem prawdy.</p>
+      </footer>
+    </div>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>
