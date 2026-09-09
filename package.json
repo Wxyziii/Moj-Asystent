@@ -1,0 +1,13 @@
+{
+  "name": "moj-asystent-workspace",
+  "private": true,
+  "workspaces": ["apps/desktop"],
+  "scripts": {
+    "dev": "npm --workspace @moj-asystent/desktop run dev",
+    "build": "npm --workspace @moj-asystent/desktop run build",
+    "lint": "npm --workspace @moj-asystent/desktop run lint",
+    "test": "npm --workspace @moj-asystent/desktop run test",
+    "typecheck": "npm --workspace @moj-asystent/desktop run typecheck",
+    "format": "npm --workspace @moj-asystent/desktop run format"
+  }
+}

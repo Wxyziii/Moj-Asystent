@@ -30,6 +30,7 @@ coverage/
 # Tauri / Rust
 target/
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 
 # IDE / OS
 .vscode/

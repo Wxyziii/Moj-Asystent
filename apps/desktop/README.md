@@ -33,3 +33,13 @@ Those belong in `services/core/`.
 ## First implementation task
 
 Bootstrap Tauri + React and implement simulated overlay states from `docs/OVERLAY_UI.md` before integrating real audio/AI.
+
+## Milestone 1
+
+Implemented: frameless always-on-top overlay, compact/expanded/settings modes,
+system tray controls, the `Ctrl` + `Shift` + `Spacja` fallback shortcut and Polish
+simulated assistant states. The frontend does not connect to the assistant core
+yet; its state fixtures are deliberately local to the UI.
+
+Run locally with `npm run dev` from the repository root. Validate the desktop
+shell with `npm --workspace @moj-asystent/desktop run tauri -- dev`.

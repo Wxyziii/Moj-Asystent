@@ -6,6 +6,12 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 1 desktop foundation under `apps/desktop`: Tauri 2, React and TypeScript application shell.
+- Frameless always-on-top overlay with compact listening bubble, expanded Polish conversation view and settings shell.
+- System tray menu, global `Ctrl` + `Shift` + `Spacja` fallback shortcut, hide/show behavior and responsive desktop window sizing.
+- Typed simulated assistant UI state transitions for idle, wake detection, listening, transcription, thinking, speaking, follow-up and error states.
+- Frontend linting, formatting, type checks and state-transition tests.
+
 - Initial product definition for a Polish-only, local-first Windows AI assistant.
 - Tauri + React desktop overlay architecture.
 - Python FastAPI assistant-core architecture.

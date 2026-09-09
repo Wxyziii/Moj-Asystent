@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Foundation",
-    "status": "Planning & repository setup",
+    "stage": "Desktop shell",
+    "status": "Milestone 1 complete — simulated desktop overlay",
     "updated": "2026-09-09"
   },
   "principles": [
@@ -23,8 +23,8 @@
     { "label": "Memory", "value": "SQLite" }
   ],
   "milestones": [
-    { "id": 0, "name": "Foundation", "status": "in_progress", "description": "Architecture, docs, Codex instructions and development site." },
-    { "id": 1, "name": "Desktop shell", "status": "planned", "description": "Tauri overlay, tray, shortcut and assistant UI states." },
+    { "id": 0, "name": "Foundation", "status": "done", "description": "Architecture, docs, Codex instructions and development site." },
+    { "id": 1, "name": "Desktop shell", "status": "done", "description": "Tauri overlay, tray, shortcut and simulated assistant UI states." },
     { "id": 2, "name": "Core service", "status": "planned", "description": "FastAPI core, WebSocket protocol and assistant state machine." },
     { "id": 3, "name": "Polish voice", "status": "planned", "description": "Wake word, VAD, forced-Polish STT, TTS and follow-up mode." },
     { "id": 4, "name": "Custom wake name", "status": "planned", "description": "Guided name training, hard negatives, validation and retraining." },
@@ -37,6 +37,16 @@
     { "id": 11, "name": "Deep model routing", "status": "planned", "description": "Quality tier and optional CPU/GPU hybrid reasoning." }
   ],
   "changelog": [
+    {
+      "date": "2026-09-09",
+      "title": "Milestone 1: desktop shell",
+      "items": [
+        "Built the Tauri 2 + React + TypeScript desktop application.",
+        "Added a frameless always-on-top overlay with compact, chat and settings modes.",
+        "Added tray integration, a global fallback shortcut and simulated Polish assistant states.",
+        "Added frontend quality checks and state-transition tests."
+      ]
+    },
     {
       "date": "2026-09-09",
       "title": "Project foundation defined",

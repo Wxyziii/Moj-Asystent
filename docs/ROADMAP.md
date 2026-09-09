@@ -9,7 +9,7 @@
 
 ## Milestone 0 — Foundation
 
-Status: `in_progress`
+Status: `done`
 
 Goals:
 
@@ -25,7 +25,7 @@ Exit criteria:
 
 ## Milestone 1 — Desktop shell
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -36,6 +36,13 @@ Deliverables:
 - compact/expanded states;
 - settings shell;
 - simulated assistant-state UI.
+
+Completed scope:
+
+- frameless, always-on-top Tauri overlay with compact, expanded and settings views;
+- tray menu and `Ctrl` + `Shift` + `Spacja` fallback shortcut;
+- Polish simulated states: idle, wake detection, listening, transcription, thinking, speaking, follow-up and error;
+- responsive React component structure and transition validation tests.
 
 ## Milestone 2 — Core service/protocol
 
