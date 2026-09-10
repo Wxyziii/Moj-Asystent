@@ -29,6 +29,10 @@ Audio bytes and VAD buffers remain in RAM and are cleared after completion, canc
 
 Configuration uses `MOJ_ASYSTENT_MICROPHONE_DEVICE`, `MOJ_ASYSTENT_SAMPLE_RATE`, `MOJ_ASYSTENT_WAKE_SENSITIVITY`, `MOJ_ASYSTENT_VAD_START_THRESHOLD`, `MOJ_ASYSTENT_VAD_END_THRESHOLD`, `MOJ_ASYSTENT_MAX_UTTERANCE_SECONDS`, `MOJ_ASYSTENT_STT_MODEL`, `MOJ_ASYSTENT_TTS_VOICE_PATH`, `MOJ_ASYSTENT_WAKE_MODEL_PATH`, `MOJ_ASYSTENT_FOLLOW_UP_SECONDS` and `MOJ_ASYSTENT_VOICE_RESPONSES`. If installed, the default Polish Piper voice is discovered under `%LOCALAPPDATA%/Moj-Asystent/models/piper/pl_PL-gosia-medium.onnx`; model downloads are explicit setup actions and remain outside the repository.
 
+## Milestone 4 custom wake name
+
+The first-run desktop wizard now owns name suitability, microphone calibration, guided Polish curriculum, sample quality feedback, local training progress, wake-only validation and sensitivity selection. During browser recording the core pauses its live capture so the webview owns the microphone; it resumes only after cancellation or atomic activation of a validated model. On first launch, no live microphone capture starts until an active model exists.
+
 ## Assistant state machine
 
 ```text

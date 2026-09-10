@@ -229,6 +229,14 @@ custom wake model
 
 Prefer openWakeWord-compatible training/export where practical.
 
+### Milestone 4 implementation
+
+The onboarding flow is now implemented in the desktop shell and authenticated core API. The core stores temporary sessions under the per-user application-data directory, not in the repository. Browser audio is converted to bounded mono PCM, validated for duration, silence, clipping and signal-to-noise, then removed after training unless a future explicit retention setting is added.
+
+The trainer uses the installed openWakeWord feature extractor as a frozen embedding backbone and exports a small deterministic PyTorch classifier to ONNX. Augmentation is seeded and bounded (gain, noise and time shift), so training is reproducible and cancellation can safely remove partial artifacts. The resulting model is loaded by the existing openWakeWord runtime and activated atomically; the previous active model remains available until a validated candidate is accepted.
+
+The upstream openWakeWord documentation currently describes English-oriented training resources. The implementation therefore treats Polish quality as a user-data and environment-dependent concern: validation is required before activation, and a poor result can be rejected or explicitly overridden with a visible warning.
+
 ## 9. Validation
 
 After training, enter actual wake-only mode.
@@ -273,6 +281,8 @@ Example persisted metadata:
 ```
 
 Wake model filenames must be sanitized and should use internal IDs rather than assuming display names are valid filesystem names.
+
+The public onboarding/status payload never exposes the local model path. The local API requires the per-launch desktop credential and Protocol 1.1 on every request; UUIDs, request bodies and base64 audio are size-limited and schema-validated.
 
 ## 11. Rename / retrain
 

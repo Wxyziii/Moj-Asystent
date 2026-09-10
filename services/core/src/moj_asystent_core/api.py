@@ -7,18 +7,22 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import Base64Bytes, BaseModel, ConfigDict, Field
 
-from .audio import AudioConfig, AudioPipeline
+from .audio import AudioConfig, AudioPipeline, PcmFrame
 from .audio_providers import (
     FasterWhisperPolishProvider,
     OpenWakeWordProvider,
     PiperPolishProvider,
     SileroVadProvider,
     SoundDeviceMicrophone,
+    list_input_devices,
 )
 from .auth import SessionCredential
 from .local_boundary import LocalHostMiddleware
@@ -33,6 +37,8 @@ from .protocol import (
     parse_event,
 )
 from .runtime import CoreRuntime
+from .wakeword import WakeModelMetadata, WakeModelStore, default_wake_root
+from .wakeword_training import OpenWakeWordOnnxTrainer, WakeOnboardingService
 
 logger = logging.getLogger(__name__)
 MAX_WEBSOCKET_MESSAGE_BYTES = 32_768
@@ -45,6 +51,45 @@ ALLOWED_ORIGINS = (
 )
 
 
+class StrictRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    protocol_version: Literal["1.1"]
+
+
+class BeginOnboardingRequest(StrictRequest):
+    name: str = Field(min_length=1, max_length=32)
+    microphone_device: str | int | None = None
+    keep_training_samples: bool = False
+
+
+class PcmRequest(StrictRequest):
+    session_id: UUID
+    pcm_s16le: Base64Bytes = Field(min_length=2, max_length=2_000_000)
+    sample_rate: int = Field(ge=8_000, le=48_000)
+
+
+class SampleRequest(PcmRequest):
+    step_id: str = Field(pattern=r"^[a-z]+-[0-9]+$|^ordinary-speech$", max_length=32)
+
+
+class TrainRequest(StrictRequest):
+    session_id: UUID
+    seed: int = Field(default=44, ge=0, le=2_147_483_647)
+
+
+class ValidationRequest(PcmRequest):
+    kind: Literal["positive", "negative"]
+
+
+class ActivateRequest(StrictRequest):
+    session_id: UUID
+    allow_override: bool = False
+
+
+class SensitivityRequest(StrictRequest):
+    value: float = Field(ge=0.05, le=0.95)
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     host: str = "127.0.0.1"
@@ -54,6 +99,7 @@ class CoreSettings:
     credential: SessionCredential = field(default_factory=SessionCredential.generate, repr=False)
     audio: AudioConfig = field(default_factory=AudioConfig)
     audio_enabled: bool = False
+    wake_data_root: Path = field(default_factory=default_wake_root)
 
     def __post_init__(self) -> None:
         if not ipaddress.ip_address(self.host).is_loopback:
@@ -68,23 +114,46 @@ class CoreSettings:
 async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     runtime = CoreRuntime()
     app.state.runtime = runtime
+    store = WakeModelStore(app.state.settings.wake_data_root)
+    active = store.load_active()
     config: AudioConfig = app.state.settings.audio
+    if active is not None:
+        config = config.model_copy(
+            update={
+                "microphone_device": active.microphone_device,
+                "wake_model_path": active.model_path,
+                "wake_sensitivity": active.sensitivity,
+            }
+        )
+    wake_provider = OpenWakeWordProvider(config.wake_model_path, config.development_wake_model)
     audio = AudioPipeline(
         runtime,
         config,
-        OpenWakeWordProvider(config.wake_model_path, config.development_wake_model),
+        wake_provider,
         SileroVadProvider(),
         FasterWhisperPolishProvider(config.stt_model),
         PiperPolishProvider(config.tts_voice_path),
         SoundDeviceMicrophone(config),
     )
     app.state.audio = audio
-    if app.state.settings.audio_enabled:
+
+    async def activate_runtime(metadata: WakeModelMetadata) -> None:
+        await audio.activate_wake_model(
+            metadata.model_path, metadata.normalized_name, metadata.sensitivity
+        )
+        audio.set_wake_suspended(False)
+        if app.state.settings.audio_enabled:
+            await audio.resume_capture(SoundDeviceMicrophone(audio.config))
+
+    onboarding = WakeOnboardingService(store, OpenWakeWordOnnxTrainer(), activate_runtime)
+    app.state.onboarding = onboarding
+    if app.state.settings.audio_enabled and active is not None:
         await audio.start()
     logger.info("core_started", extra={"protocol_version": PROTOCOL_VERSION})
     try:
         yield
     finally:
+        await onboarding.shutdown()
         await audio.shutdown()
         await runtime.shutdown()
         logger.info("core_stopped")
@@ -97,7 +166,7 @@ def create_app(settings: CoreSettings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(ALLOWED_ORIGINS),
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
     app.add_middleware(LocalHostMiddleware)
@@ -112,6 +181,18 @@ def create_app(settings: CoreSettings | None = None) -> FastAPI:
         if not candidate or not resolved.credential.matches(candidate):
             raise HTTPException(status_code=401, detail="Unauthorized")
 
+    def onboarding_service() -> WakeOnboardingService:
+        return app.state.onboarding
+
+    def safe_call(function, *args):
+        try:
+            return function(*args)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    def public_metadata(metadata: WakeModelMetadata) -> dict[str, object]:
+        return metadata.model_dump(mode="json", exclude={"model_path"})
+
     @app.get("/health", response_model=SystemHealthPayload)
     async def health(_: Annotated[None, Depends(authorize)]) -> SystemHealthPayload:
         return app.state.runtime.health_payload()
@@ -125,6 +206,149 @@ def create_app(settings: CoreSettings | None = None) -> FastAPI:
     async def cancel(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:
         await app.state.audio.cancel()
         return {"status": "idle"}
+
+    @app.get("/audio/devices")
+    async def audio_devices(_: Annotated[None, Depends(authorize)]) -> list[dict[str, object]]:
+        return await asyncio.to_thread(list_input_devices)
+
+    @app.get("/onboarding/status")
+    async def onboarding_status(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        active = onboarding_service().active()
+        return {
+            "completed": active is not None,
+            "active": public_metadata(active) if active is not None else None,
+        }
+
+    @app.post("/onboarding/sessions")
+    async def begin_onboarding(
+        request: BeginOnboardingRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        await app.state.audio.pause_capture()
+        try:
+            result = safe_call(
+                onboarding_service().begin,
+                request.name,
+                request.microphone_device,
+                request.keep_training_samples,
+            )
+        except Exception:
+            if onboarding_service().active() is not None and resolved.audio_enabled:
+                await app.state.audio.resume_capture(SoundDeviceMicrophone(app.state.audio.config))
+            raise
+        app.state.audio.set_wake_suspended(True)
+        return result
+
+    @app.get("/onboarding/sessions/{session_id}")
+    async def onboarding_session(
+        session_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        return safe_call(onboarding_service().get, session_id)
+
+    @app.post("/onboarding/calibration")
+    async def onboarding_calibration(
+        request: PcmRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        return safe_call(
+            onboarding_service().calibrate,
+            request.session_id,
+            PcmFrame(bytes(request.pcm_s16le), request.sample_rate),
+        )
+
+    @app.post("/onboarding/samples")
+    async def onboarding_sample(
+        request: SampleRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        return safe_call(
+            onboarding_service().add_sample,
+            request.session_id,
+            request.step_id,
+            PcmFrame(bytes(request.pcm_s16le), request.sample_rate),
+        )
+
+    @app.post("/onboarding/training")
+    async def onboarding_training(
+        request: TrainRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        try:
+            return onboarding_service().start_training(request.session_id, seed=request.seed)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/onboarding/training/{job_id}")
+    async def onboarding_training_status(
+        job_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        return safe_call(onboarding_service().job, job_id)
+
+    @app.post("/onboarding/training/{job_id}/cancel")
+    async def onboarding_training_cancel(
+        job_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        try:
+            return await onboarding_service().cancel_training(job_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.delete("/onboarding/sessions/{session_id}")
+    async def onboarding_cancel(
+        session_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, str]:
+        try:
+            await onboarding_service().cancel_session(session_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        app.state.audio.set_wake_suspended(False)
+        if onboarding_service().active() is not None and resolved.audio_enabled:
+            await app.state.audio.resume_capture(SoundDeviceMicrophone(app.state.audio.config))
+        return {"status": "cancelled"}
+
+    @app.post("/onboarding/validation")
+    async def onboarding_validation(
+        request: ValidationRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        try:
+            return await onboarding_service().validate_sample(
+                request.session_id,
+                PcmFrame(bytes(request.pcm_s16le), request.sample_rate),
+                positive=request.kind == "positive",
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/onboarding/activate")
+    async def onboarding_activate(
+        request: ActivateRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        try:
+            activated = await onboarding_service().activate(
+                request.session_id, allow_override=request.allow_override
+            )
+            return public_metadata(activated)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.patch("/onboarding/sensitivity")
+    async def onboarding_sensitivity(
+        request: SensitivityRequest,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        try:
+            updated = await onboarding_service().set_sensitivity(request.value)
+            return public_metadata(updated)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/shutdown")
     async def shutdown(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:

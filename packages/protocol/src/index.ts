@@ -71,6 +71,205 @@ export type ProtocolEvent =
   | AssistantResponseCompleted
   | SystemError;
 
+export type RecordingKind =
+  | "positive"
+  | "natural_command"
+  | "hard_negative"
+  | "ordinary_speech";
+
+export interface NameAssessment {
+  display_name: string;
+  normalized_name: string;
+  score: number;
+  rating: "słaba" | "dobra" | "bardzo dobra";
+  false_trigger_risk: "wysokie" | "umiarkowane" | "niskie";
+  syllable_count: number;
+  trainable: boolean;
+  warnings: string[];
+  explanation: string;
+}
+
+export interface RecordingStep {
+  id: string;
+  kind: RecordingKind;
+  phrase: string;
+  loudness: string;
+  distance: string;
+  intonation: string;
+  posture: string;
+  guidance: string;
+  avoid: string;
+  expected_seconds: [number, number];
+}
+
+export interface SampleQuality {
+  accepted: boolean;
+  speech_detected: boolean;
+  volume_ok: boolean;
+  no_clipping: boolean;
+  duration_ok: boolean;
+  silence_ok: boolean;
+  signal_to_noise_db: number;
+  rms: number;
+  peak: number;
+  clipping_ratio: number;
+  silence_ratio: number;
+  duration_seconds: number;
+  reason: string;
+}
+
+export interface CalibrationResult {
+  rms: number;
+  peak: number;
+  clipping_ratio: number;
+  noise_floor_rms: number;
+  ready: boolean;
+  message: string;
+}
+
+export interface ValidationMetrics {
+  attempts: number;
+  successful_activations: number;
+  missed_activations: number;
+  false_accepts: number;
+  recall: number;
+  false_accepts_per_hour: number;
+  threshold: number;
+  positive_scores: number[];
+  negative_scores: number[];
+  passed: boolean;
+}
+
+export interface OnboardingSession {
+  session_id: string;
+  name: NameAssessment;
+  microphone_device: string | number | null;
+  keep_training_samples: boolean;
+  curriculum: RecordingStep[];
+  accepted_step_ids: string[];
+  calibration: CalibrationResult | null;
+  training_job_id: string | null;
+  candidate_ready: boolean;
+  validation: ValidationMetrics | null;
+}
+
+export interface TrainingJob {
+  job_id: string;
+  session_id: string;
+  status: "running" | "ready" | "failed" | "cancelled";
+  progress: number;
+  stage: string;
+  error: string | null;
+}
+
+export interface WakeModelMetadata {
+  model_id: string;
+  assistant_name: string;
+  normalized_name: string;
+  backend: "openwakeword-onnx";
+  backend_version: string;
+  model_version: number;
+  trained_at: string;
+  sensitivity: number;
+  validated: boolean;
+  validation: ValidationMetrics | null;
+  microphone_device: string | number | null;
+  keep_training_samples: boolean;
+}
+
+export function parseOnboardingSession(value: unknown): OnboardingSession | null {
+  if (!isRecord(value) || !isUuid(value.session_id) || !Array.isArray(value.curriculum))
+    return null;
+  if (!isNameAssessment(value.name)) return null;
+  const curriculum = value.curriculum.filter(isRecordingStep);
+  if (curriculum.length !== value.curriculum.length) return null;
+  if (
+    !Array.isArray(value.accepted_step_ids) ||
+    !value.accepted_step_ids.every((item) => typeof item === "string") ||
+    typeof value.keep_training_samples !== "boolean" ||
+    typeof value.candidate_ready !== "boolean"
+  )
+    return null;
+  return value as unknown as OnboardingSession;
+}
+
+export function parseTrainingJob(value: unknown): TrainingJob | null {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.job_id) ||
+    !isUuid(value.session_id) ||
+    !["running", "ready", "failed", "cancelled"].includes(String(value.status)) ||
+    !Number.isInteger(value.progress) ||
+    Number(value.progress) < 0 ||
+    Number(value.progress) > 100 ||
+    typeof value.stage !== "string" ||
+    !(value.error === null || typeof value.error === "string")
+  )
+    return null;
+  return value as unknown as TrainingJob;
+}
+
+export function parseSampleQuality(value: unknown): SampleQuality | null {
+  const booleans = [
+    "accepted",
+    "speech_detected",
+    "volume_ok",
+    "no_clipping",
+    "duration_ok",
+    "silence_ok",
+  ];
+  const numbers = [
+    "signal_to_noise_db",
+    "rms",
+    "peak",
+    "clipping_ratio",
+    "silence_ratio",
+    "duration_seconds",
+  ];
+  return isRecord(value) &&
+    booleans.every((key) => typeof value[key] === "boolean") &&
+    numbers.every((key) => typeof value[key] === "number") &&
+    typeof value.reason === "string"
+    ? (value as unknown as SampleQuality)
+    : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNameAssessment(value: unknown): value is NameAssessment {
+  return (
+    isRecord(value) &&
+    typeof value.display_name === "string" &&
+    typeof value.normalized_name === "string" &&
+    Number.isInteger(value.score) &&
+    typeof value.rating === "string" &&
+    typeof value.false_trigger_risk === "string" &&
+    Number.isInteger(value.syllable_count) &&
+    typeof value.trainable === "boolean" &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every((item) => typeof item === "string") &&
+    typeof value.explanation === "string"
+  );
+}
+
+function isRecordingStep(value: unknown): value is RecordingStep {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    ["positive", "natural_command", "hard_negative", "ordinary_speech"].includes(
+      String(value.kind),
+    ) &&
+    ["phrase", "loudness", "distance", "intonation", "posture", "guidance", "avoid"].every(
+      (key) => typeof value[key] === "string",
+    ) &&
+    Array.isArray(value.expected_seconds) &&
+    value.expected_seconds.length === 2 &&
+    value.expected_seconds.every((item) => typeof item === "number")
+  );
+}
+
 export function createClientHello(clientId: string): ClientHello {
   return {
     protocol_version: PROTOCOL_VERSION,

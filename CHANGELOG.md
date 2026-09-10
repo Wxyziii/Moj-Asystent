@@ -6,6 +6,11 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 4 custom assistant-name onboarding: Polish suitability scoring, generated confusables, guided recordings, calibration, quality feedback and wake-only validation.
+- Local deterministic openWakeWord-compatible ONNX trainer with cancellable jobs, bounded seeded augmentation and atomic activation/retraining.
+- Authenticated desktop/core onboarding APIs, shared TypeScript protocol parsers and a polished Polish setup wizard.
+- First-run audio remains closed until an active wake model exists; retraining pauses and safely restores the live capture pipeline.
+
 - Milestone 3 Polish voice pipeline: bounded in-memory microphone frames, openWakeWord development activation, Silero VAD speech boundaries, faster-whisper forced to `pl`, Piper `pl_PL` playback and timed follow-up listening.
 - Cancellable audio orchestration with operation generations, stale-result suppression, playback feedback blocking, device retry and deterministic Polish placeholder responses without an LLM.
 - Protocol `1.1` transcript and completed-response events, validated consistently by JSON Schema, Python and TypeScript.

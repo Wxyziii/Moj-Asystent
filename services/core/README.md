@@ -27,6 +27,12 @@ and Piper adapters. Model weights stay in user caches/outside Git. Set
 the default local application model directory. LLM, screen, tool and persistence
 implementations remain out of scope.
 
+Milestone 4 adds authenticated `/onboarding/*` endpoints for name scoring,
+microphone calibration, bounded PCM samples, cancellable local ONNX training,
+validation, sensitivity and atomic activation. Sessions and model artifacts are
+kept under the user's local application-data directory. The service does not
+start live microphone capture until an active model exists.
+
 ## Responsibilities
 
 - assistant state machine;

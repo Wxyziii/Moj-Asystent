@@ -195,6 +195,7 @@ class AudioPipeline:
         self._processing_task: asyncio.Task[None] | None = None
         self._follow_up_task: asyncio.Task[None] | None = None
         self._playback_active = False
+        self._wake_suspended = False
         self.closed = False
         self.last_error_code: str | None = None
 
@@ -202,11 +203,49 @@ class AudioPipeline:
     def current_operation_id(self) -> UUID | None:
         return self._operation_id
 
+    async def activate_wake_model(
+        self, model_path: str, model_name: str, sensitivity: float
+    ) -> None:
+        """Swap a validated wake model on the owner loop without disturbing STT/TTS."""
+        if not 0.05 <= sensitivity <= 0.95:
+            raise ValueError("Wake sensitivity is outside the supported range")
+        activate = getattr(self._wake, "activate_model", None)
+        if activate is None:
+            raise RuntimeError("Wake provider cannot reload a model")
+        await asyncio.to_thread(activate, model_path, model_name)
+        self.config = self.config.model_copy(
+            update={"wake_model_path": model_path, "wake_sensitivity": sensitivity}
+        )
+        self._wake.reset()
+
+    def set_wake_suspended(self, suspended: bool) -> None:
+        self._wake_suspended = suspended
+        if suspended:
+            self._wake.reset()
+
     async def start(self) -> None:
         if self.closed:
             raise RuntimeError("Audio pipeline is closed")
         if self._source is not None and self._capture_task is None:
             self._capture_task = asyncio.create_task(self._consume_source())
+
+    async def pause_capture(self) -> None:
+        """Release the live microphone while the onboarding recorder owns it."""
+        task = self._capture_task
+        self._capture_task = None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if self._source is not None:
+            await self._source.close()
+            self._source = None
+
+    async def resume_capture(self, source: AudioSource) -> None:
+        if self.closed:
+            raise RuntimeError("Audio pipeline is closed")
+        await self.pause_capture()
+        self._source = source
+        await self.start()
 
     async def _consume_source(self) -> None:
         assert self._source is not None
@@ -231,6 +270,8 @@ class AudioPipeline:
             return
         state = self._runtime.state
         if state == "idle":
+            if self._wake_suspended:
+                return
             if await self._wake.score(frame) >= self.config.wake_sensitivity:
                 await self._activate_from_wake()
             return

@@ -134,6 +134,8 @@ V1 local-first.
 
 The desktop/core voice boundary additionally requires a per-launch random credential. Tauri passes it directly to the owned core process, and the core validates it before health responses, audio-control requests or WebSocket acceptance. Credentials are memory-only, omitted from logs and invalid after application restart. HTTP and WebSocket remain restricted to loopback hosts and known desktop origins, with strict payload-size and schema validation. This limits accidental cross-origin/local access; it does not defend against a malicious process with access to the same user's process memory.
 
+Wake-name onboarding uses the same boundary. Session, calibration, training, validation and activation endpoints require the credential and Protocol 1.1. Session IDs are UUIDs, request models reject unknown fields, base64 PCM is bounded before decoding, and model activation accepts only a validated ONNX file in the service-owned model directory. Status responses redact filesystem paths. Temporary recordings and partial models are cleaned up on cancellation, failure and shutdown; the active model is replaced only through an atomic file operation.
+
 ## Logs
 
 Do log:

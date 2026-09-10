@@ -170,3 +170,13 @@ Reason: lower CPU/GPU use, better privacy and more predictable behavior than con
 Decision: architecture, roadmap, decisions and changelog live in versioned repository docs.
 
 The development website is a visual presentation layer. If the website and docs disagree, docs win and the website should be updated.
+
+## 2026-09-10 — Local ONNX custom wake training
+
+Decision: implement custom wake-name training locally with the installed openWakeWord feature extractor as a frozen embedding backbone and a small deterministic ONNX classifier, while keeping runtime activation behind the existing `OpenWakeWordProvider` interface.
+
+The installed runtime package is inference-focused and does not expose the upstream training notebook/tooling. The local trainer therefore uses only user-provided recordings, bounded seeded augmentation and atomic model activation. The upstream documentation is English-oriented, so Polish quality must be demonstrated by the onboarding validation flow and may require retraining or an explicit user override. No recordings, datasets or personal models are committed.
+
+## 2026-09-10 — Browser-owned onboarding capture
+
+Decision: during first-run/retraining, the desktop webview temporarily owns microphone capture for guided recording while the core pauses its live audio source. The core remains responsible for validation, storage, training and runtime activation. If onboarding is cancelled, the previous capture/model configuration is restored; if activation succeeds, capture resumes with the new model.

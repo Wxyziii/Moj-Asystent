@@ -90,7 +90,7 @@ Completed scope:
 
 ## Milestone 4 — Custom wake-name onboarding
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -101,6 +101,16 @@ Deliverables:
 - local model training;
 - validation;
 - rename/retrain.
+
+Completed scope:
+
+- Polish name normalization and suitability scoring with generated confusable phrases;
+- authenticated, guided desktop onboarding with calibration and quality feedback;
+- deterministic local ONNX training with seeded augmentation and cancellable jobs;
+- hard-negative and ordinary-speech curriculum, wake-only validation and sensitivity selection;
+- atomic model activation, safe cleanup, previous-model preservation and retraining support.
+
+Known limitation: the upstream openWakeWord training resources are English-oriented, so Polish recognition quality still requires real-device validation and may require additional user samples.
 
 ## Milestone 5 — Local AI chat
 

@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Polish voice pipeline",
-    "status": "Milestone 3 complete — authenticated local wake, VAD, Polish STT/TTS and follow-up",
+    "stage": "Custom wake-name onboarding",
+    "status": "Milestone 4 complete — guided Polish name training, local validation and atomic wake-model activation",
     "updated": "2026-09-10"
   },
   "principles": [
@@ -53,8 +53,8 @@
     {
       "id": 4,
       "name": "Custom wake name",
-      "status": "planned",
-      "description": "Guided name training, hard negatives, validation and retraining."
+      "status": "done",
+      "description": "Guided Polish name training, hard negatives, local ONNX validation, sensitivity selection and safe retraining."
     },
     {
       "id": 5,
@@ -100,6 +100,16 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-10",
+      "title": "Milestone 4: custom wake-name onboarding",
+      "items": [
+        "Added Polish name suitability scoring, generated confusable phrases and a guided desktop recording wizard.",
+        "Added deterministic local ONNX training, cancellable jobs, wake-only validation and sensitivity selection.",
+        "Added atomic model activation, previous-model preservation and safe cleanup for retraining.",
+        "Kept first-run microphone capture disabled until a validated wake model is active."
+      ]
+    },
     {
       "date": "2026-09-10",
       "title": "Milestone 3: Polish voice pipeline",

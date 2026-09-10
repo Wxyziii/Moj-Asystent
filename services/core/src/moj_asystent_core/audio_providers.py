@@ -20,6 +20,29 @@ from .providers import (
 )
 
 
+def list_input_devices() -> list[dict[str, object]]:
+    """Return bounded, presentation-safe microphone metadata from PortAudio."""
+    import sounddevice as sd
+
+    default_input = sd.default.device[0]
+    devices: list[dict[str, object]] = []
+    for index, raw in enumerate(sd.query_devices()):
+        channels = int(raw["max_input_channels"])
+        if channels <= 0:
+            continue
+        name = str(raw["name"])[:128]
+        devices.append(
+            {
+                "id": index,
+                "name": name,
+                "sample_rate": round(float(raw["default_samplerate"])),
+                "channels": channels,
+                "is_default": index == default_input,
+            }
+        )
+    return devices[:64]
+
+
 class ThreadSafeAudioIngress:
     """Bounded bridge; producer threads can only enqueue onto the owner loop."""
 
@@ -120,21 +143,23 @@ class OpenWakeWordProvider:
         self._model_path = model_path
         self._model_name = model_name
         self._model: Any = None
+        self._model_lock = threading.Lock()
 
     def _load(self) -> Any:
-        if self._model is None:
-            import openwakeword
-            from openwakeword.model import Model
+        with self._model_lock:
+            if self._model is None:
+                import openwakeword
+                from openwakeword.model import Model
 
-            path = self._model_path
-            if path is None:
-                metadata = openwakeword.models.get(self._model_name)
-                if not metadata:
-                    raise ProviderUnavailableError("Unknown development wake model")
-                path = metadata["model_path"]
-            if not Path(path).is_file():
-                raise ProviderUnavailableError("Wake model is unavailable")
-            self._model = Model(wakeword_model_paths=[path])
+                path = self._model_path
+                if path is None:
+                    metadata = openwakeword.models.get(self._model_name)
+                    if not metadata:
+                        raise ProviderUnavailableError("Unknown development wake model")
+                    path = metadata["model_path"]
+                if not Path(path).is_file():
+                    raise ProviderUnavailableError("Wake model is unavailable")
+                self._model = Model(wakeword_model_paths=[path])
         return self._model
 
     def _score(self, audio: PcmFrame) -> float:
@@ -149,6 +174,34 @@ class OpenWakeWordProvider:
 
     async def score(self, audio: PcmFrame) -> float:
         return await asyncio.to_thread(self._score, audio)
+
+    def _score_clip(self, audio: PcmFrame) -> float:
+        import numpy as np
+
+        if audio.sample_rate != 16_000:
+            raise ProviderUnavailableError("openWakeWord requires 16 kHz input")
+        model = self._load()
+        model.reset()
+        predictions = model.predict_clip(
+            np.frombuffer(audio.pcm_s16le, dtype=np.int16), padding=1, chunk_size=1_280
+        )
+        return max(
+            (float(value) for frame in predictions for value in frame.values()),
+            default=0.0,
+        )
+
+    async def score_clip(self, audio: PcmFrame) -> float:
+        """Score a held-out clip through the same streaming runtime as live wake audio."""
+        return await asyncio.to_thread(self._score_clip, audio)
+
+    def activate_model(self, model_path: str, model_name: str) -> None:
+        path = Path(model_path).resolve()
+        if not path.is_file() or path.suffix.casefold() != ".onnx":
+            raise ProviderUnavailableError("Wake model is unavailable")
+        with self._model_lock:
+            self._model_path = str(path)
+            self._model_name = model_name
+            self._model = None
 
     def reset(self) -> None:
         if self._model is not None and hasattr(self._model, "reset"):

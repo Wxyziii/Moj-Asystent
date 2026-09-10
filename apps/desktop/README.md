@@ -39,5 +39,11 @@ creates its memory-only session credential, reconnects with bounded backoff and
 renders authenticated core state, final Polish transcripts and deterministic
 Milestone 3 responses. Simulation remains clearly labeled for UI development.
 
+Milestone 4 adds the first-run and settings-accessible Polish wake-name wizard.
+It records temporary browser PCM only while the core capture is paused, then
+hands validated samples to the authenticated core for local training and model
+activation. The wizard exposes quality guidance, progress, validation and
+sensitivity without moving wake-word or training logic into React.
+
 Run locally with `npm run dev` from the repository root. Validate the desktop
 shell with `npm --workspace @moj-asystent/desktop run tauri -- dev`.

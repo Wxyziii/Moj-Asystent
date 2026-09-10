@@ -11,21 +11,19 @@ import {
 
 interface SettingsShellProps {
   onBack: () => void;
+  onWakeSettings: () => void;
+  assistantName?: string;
 }
 
-const sections = [
-  {
-    icon: SlidersHorizontal,
-    title: "Asystent",
-    detail: "Polski · odpowiedzi zwięzłe",
-    value: "Gotowe",
-  },
-  {
-    icon: Volume2,
-    title: "Głos",
-    detail: "Opcje pojawią się po integracji audio",
-    value: "Wkrótce",
-  },
+interface SettingsSection {
+  icon: typeof SlidersHorizontal;
+  title: string;
+  detail: string;
+  value: string;
+  action?: () => void;
+}
+
+const baseSections: SettingsSection[] = [
   {
     icon: MonitorUp,
     title: "Prywatność",
@@ -40,7 +38,30 @@ const sections = [
   },
 ];
 
-export function SettingsShell({ onBack }: SettingsShellProps) {
+export function SettingsShell({
+  onBack,
+  onWakeSettings,
+  assistantName,
+}: SettingsShellProps) {
+  const sections: SettingsSection[] = [
+    {
+      icon: SlidersHorizontal,
+      title: "Asystent",
+      detail: assistantName
+        ? `Imię aktywujące: ${assistantName}`
+        : "Skonfiguruj imię aktywujące",
+      value: assistantName ?? "Ustaw",
+      action: onWakeSettings,
+    },
+    {
+      icon: Volume2,
+      title: "Głos i mikrofon",
+      detail: "Czułość, kalibracja, zmiana mikrofonu i ponowny trening",
+      value: "Zmień",
+      action: onWakeSettings,
+    },
+    ...baseSections,
+  ];
   return (
     <main className="settings overlay-surface" aria-label="Ustawienia">
       <header className="settings__header drag-region" data-tauri-drag-region>
@@ -59,13 +80,13 @@ export function SettingsShell({ onBack }: SettingsShellProps) {
           <p className="eyebrow">MÓJ ASYSTENT</p>
           <h1>Spokojnie. Lokalnie. Po Twojemu.</h1>
           <p>
-            To ustawienia szkieletu aplikacji. Nie zapisujemy jeszcze żadnych
-            rozmów, nagrań ani danych systemowych.
+            Imię, model aktywacji i ustawienia głosu pozostają lokalnie na tym
+            komputerze. Surowe próbki są domyślnie usuwane po treningu.
           </p>
         </section>
         <section className="settings-group" aria-label="Obszary ustawień">
-          {sections.map(({ icon: Icon, title, detail, value }) => (
-            <button className="settings-row" key={title}>
+          {sections.map(({ icon: Icon, title, detail, value, action }) => (
+            <button className="settings-row" key={title} onClick={action}>
               <span className="settings-row__icon">
                 <Icon size={19} />
               </span>

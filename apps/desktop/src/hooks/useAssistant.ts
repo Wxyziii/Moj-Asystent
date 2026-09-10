@@ -113,5 +113,6 @@ export function useAssistantUi() {
     stateSource,
     messages,
     toggleListening,
+    credential,
   };
 }
