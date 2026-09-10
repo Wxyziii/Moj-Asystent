@@ -93,7 +93,7 @@ SLEEPING
 
 Initial implementation:
 
-- faster-whisper;
+- faster-whisper Medium by default (override with `MOJ_ASYSTENT_STT_MODEL=small` on lower-memory machines);
 - Polish forced;
 - CPU INT8 first;
 - benchmark Whisper Small and Medium;

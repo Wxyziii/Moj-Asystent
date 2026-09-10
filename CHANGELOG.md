@@ -25,6 +25,7 @@ All notable project changes are tracked here.
 
 - Wake-name samples no longer fail the silence check solely because the fixed-duration recorder leaves padding after a short spoken name.
 - Training now reconciles accepted samples already stored on disk and returns to the first missing recording instead of asking users to repeat the full curriculum.
+- The default Polish faster-whisper model is now Medium for better short-phrase transcription; Small remains available as an explicit override.
 - Audio-provider work and microphone callbacks no longer mutate assistant state outside the runtime's owning asyncio loop.
 - Cancellation and shutdown now release RAM audio buffers and close capture/playback resources without allowing late STT/TTS results to change state.
 

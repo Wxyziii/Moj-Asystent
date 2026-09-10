@@ -49,7 +49,7 @@ class AudioConfig(BaseModel):
     min_speech_ms: int = Field(default=160, ge=20, le=5_000)
     trailing_silence_ms: int = Field(default=560, ge=40, le=3_000)
     maximum_utterance_seconds: float = Field(default=30, gt=0, le=120)
-    stt_model: str = Field(default="small", min_length=1, max_length=128)
+    stt_model: str = Field(default="medium", min_length=1, max_length=128)
     tts_voice_path: str | None = Field(default_factory=_default_piper_voice)
     wake_model_path: str | None = None
     development_wake_model: str = Field(default="alexa", min_length=1, max_length=64)
