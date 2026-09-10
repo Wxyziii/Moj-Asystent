@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from moj_asystent_core.audio import PcmFrame
+from moj_asystent_core.audio_providers import OpenWakeWordProvider
 from moj_asystent_core.wakeword import (
     SampleKind,
     WakeModelMetadata,
@@ -185,6 +186,32 @@ async def test_failed_training_cleans_output_and_preserves_active_model(tmp_path
     assert service.job(job.job_id).status == "failed"
     assert not list((store.sessions / str(session.session_id)).glob("*.partial"))
     assert store.load_active().assistant_name == "Mira"
+
+
+@pytest.mark.asyncio
+async def test_validation_normalizes_browser_sample_rate_before_wake_scoring(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = WakeModelStore(tmp_path)
+    service = WakeOnboardingService(store, FakeTrainer(), no_runtime_change)
+    session = service.begin("Nora", None, False)
+    internal = service._sessions[session.session_id]  # noqa: SLF001
+    internal.candidate_path.write_bytes(b"candidate")
+    internal.view = internal.view.model_copy(update={"candidate_ready": True})
+    seen_rates: list[int] = []
+
+    async def score_clip(_provider: object, frame: PcmFrame) -> float:
+        seen_rates.append(frame.sample_rate)
+        return 0.8
+
+    monkeypatch.setattr(OpenWakeWordProvider, "score_clip", score_clip)
+    await service.validate_sample(
+        session.session_id,
+        PcmFrame(pcm(amplitude=0.18, seconds=1.0, sample_rate=48_000), 48_000),
+        positive=True,
+    )
+
+    assert seen_rates == [16_000]
 
 
 def test_training_reconciles_existing_samples_and_reports_only_missing_steps(

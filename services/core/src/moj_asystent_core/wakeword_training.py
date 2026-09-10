@@ -403,6 +403,7 @@ class WakeOnboardingService:
         session = self._session(session_id)
         if not session.view.candidate_ready or not session.candidate_path.is_file():
             raise ValueError("Model nie jest gotowy do walidacji")
+        frame = normalize_pcm(frame)
         provider = OpenWakeWordProvider(
             str(session.candidate_path), session.view.name.normalized_name
         )
