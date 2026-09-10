@@ -23,6 +23,7 @@ All notable project changes are tracked here.
 
 ### Fixed
 
+- Wake-name samples no longer fail the silence check solely because the fixed-duration recorder leaves padding after a short spoken name.
 - Audio-provider work and microphone callbacks no longer mutate assistant state outside the runtime's owning asyncio loop.
 - Cancellation and shutdown now release RAM audio buffers and close capture/playback resources without allowing late STT/TTS results to change state.
 

@@ -395,7 +395,18 @@ def analyze_sample(
     frame_rms = (
         np.sqrt(np.mean(usable.reshape(-1, frame) ** 2, axis=1)) if len(usable) else np.array([0.0])
     )
-    silence_ratio = float(np.mean(frame_rms < max(noise_floor_rms * 1.5, 0.01)))
+    silence_threshold = max(noise_floor_rms * 1.5, 0.01)
+    active_frames = frame_rms >= silence_threshold
+    if active_frames.any():
+        first_active = int(np.flatnonzero(active_frames)[0])
+        last_active = int(np.flatnonzero(active_frames)[-1]) + 1
+        speech_window = frame_rms[first_active:last_active]
+        # Fixed-duration browser recordings intentionally include a little
+        # leading/trailing padding. Measure silence inside the spoken window so
+        # a short name such as "Zbyszek" is not rejected for its tail padding.
+        silence_ratio = float(np.mean(speech_window < silence_threshold))
+    else:
+        silence_ratio = 1.0
     speech = rms >= max(noise_floor_rms * 1.8, 0.012) and silence_ratio < 0.92
     volume_ok = 0.018 <= rms <= 0.55
     no_clipping = clipping <= 0.002 and peak < 0.999

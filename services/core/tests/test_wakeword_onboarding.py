@@ -92,6 +92,16 @@ def test_sample_quality_accepts_voice_and_rejects_quiet_clipped_and_silent() -> 
     assert not analyze_sample(b"\0\0" * 16_000, 16_000, expected_seconds=(0.5, 2.5)).accepted
 
 
+def test_sample_quality_ignores_recorder_padding_after_a_short_wake_name() -> None:
+    speech = pcm(amplitude=0.18, seconds=0.55, sample_rate=16_000)
+    padded = speech + b"\0\0" * round(1.85 * 16_000)
+
+    quality = analyze_sample(padded, 16_000, expected_seconds=(0.45, 3.5))
+
+    assert quality.accepted, quality.reason
+    assert quality.silence_ratio < 0.2
+
+
 def test_validation_metrics_and_sensitivity_use_held_out_runtime_scores() -> None:
     threshold = select_sensitivity([0.82, 0.75, 0.91, 0.69, 0.88], [0.1, 0.18, 0.22])
     result = calculate_validation(
