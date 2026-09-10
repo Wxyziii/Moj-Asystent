@@ -110,7 +110,7 @@ Completed scope:
 - hard-negative and ordinary-speech curriculum, wake-only validation and sensitivity selection;
 - atomic model activation, safe cleanup, previous-model preservation and retraining support.
 
-Known limitation: the upstream openWakeWord training resources are English-oriented, so Polish recognition quality still requires real-device validation and may require additional user samples.
+Target-hardware validation completed with real human microphone input: voice detection and the trained wake call both activated the expected assistant flow. The upstream openWakeWord training resources remain English-oriented, so broader Polish recall and false-activation benchmarking may still require additional user samples.
 
 ## Milestone 5 — Local AI chat
 

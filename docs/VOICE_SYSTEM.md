@@ -33,6 +33,8 @@ Configuration uses `MOJ_ASYSTENT_MICROPHONE_DEVICE`, `MOJ_ASYSTENT_SAMPLE_RATE`,
 
 The first-run desktop wizard now owns name suitability, microphone calibration, guided Polish curriculum, sample quality feedback, local training progress, wake-only validation and sensitivity selection. During browser recording the core pauses its live capture so the webview owns the microphone; it resumes only after cancellation or atomic activation of a validated model. On first launch, no live microphone capture starts until an active model exists.
 
+Target-hardware validation completed on 2026-09-10: real human microphone input was detected, the trained wake call activated the assistant, and the wake → listening → transcription path completed successfully.
+
 ## Assistant state machine
 
 ```text

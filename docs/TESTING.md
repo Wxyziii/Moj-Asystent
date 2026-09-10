@@ -88,6 +88,12 @@ Track at least:
 
 Do not rely on training accuracy alone.
 
+## Completed target-hardware validation
+
+Manual testing completed on 2026-09-10 confirms that the Milestone 3 microphone path detects real human speech on the target Windows hardware and that the Milestone 4 user-trained wake call activates the assistant successfully. The trained name was recognized hands-free, the overlay entered listening mode, and the following utterance reached transcription.
+
+This validates the basic real-device voice and wake path. Polish STT accuracy remains model-, microphone- and utterance-dependent and is tracked separately from wake-call success.
+
 ## Model evaluation
 
 Maintain a small Polish benchmark set covering:
