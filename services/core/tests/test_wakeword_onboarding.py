@@ -187,6 +187,29 @@ async def test_failed_training_cleans_output_and_preserves_active_model(tmp_path
     assert store.load_active().assistant_name == "Mira"
 
 
+def test_training_reconciles_existing_samples_and_reports_only_missing_steps(
+    tmp_path: Path,
+) -> None:
+    store = WakeModelStore(tmp_path)
+    service = WakeOnboardingService(store, FakeTrainer(), no_runtime_change)
+    session = service.begin("Nora", None, False)
+    service.calibrate(session.session_id, PcmFrame(pcm(amplitude=0.08), 16_000))
+    service.add_sample(
+        session.session_id,
+        "wake-1",
+        PcmFrame(pcm(amplitude=0.18, seconds=1.2), 16_000),
+    )
+    # Simulate a UI/core view that lost its in-memory accepted list while the
+    # durable sample remains on disk.
+    internal = service._sessions[session.session_id]  # noqa: SLF001
+    internal.view = internal.view.model_copy(update={"accepted_step_ids": ()})
+
+    with pytest.raises(ValueError, match="wake-2"):
+        service.start_training(session.session_id)
+
+    assert "wake-1" in service.get(session.session_id).accepted_step_ids
+
+
 @pytest.mark.asyncio
 async def test_training_is_cancellable_and_late_result_is_suppressed(tmp_path: Path) -> None:
     service = WakeOnboardingService(

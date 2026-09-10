@@ -78,6 +78,16 @@ export async function beginOnboarding(
   return parsed;
 }
 
+export async function getOnboardingSession(
+  credential: string,
+  sessionId: string,
+): Promise<OnboardingSession> {
+  const value = await request(`/onboarding/sessions/${sessionId}`, credential);
+  const parsed = parseOnboardingSession(value);
+  if (!parsed) throw new Error("Core zwrócił nieprawidłową sesję konfiguracji.");
+  return parsed;
+}
+
 export async function sendCalibration(
   credential: string,
   sessionId: string,

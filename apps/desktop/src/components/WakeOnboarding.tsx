@@ -21,6 +21,7 @@ import type {
 import {
   activateWakeModel,
   beginOnboarding,
+  getOnboardingSession,
   cancelOnboarding,
   cancelTraining,
   getTraining,
@@ -203,7 +204,24 @@ export function WakeOnboarding({
   async function train() {
     if (!session) return;
     setBusy(true);
+    setError(undefined);
     try {
+      const refreshed = await getOnboardingSession(
+        credential,
+        session.session_id,
+      );
+      setSession(refreshed);
+      const missingIndex = refreshed.curriculum.findIndex(
+        (item) => !refreshed.accepted_step_ids.includes(item.id),
+      );
+      if (missingIndex >= 0) {
+        setRecordingIndex(missingIndex);
+        setStage("recordings");
+        setError(
+          `Brakuje ${refreshed.curriculum.length - refreshed.accepted_step_ids.length} próbek. Zachowane nagrania pozostają bez zmian.`,
+        );
+        return;
+      }
       const next = await startTraining(credential, session.session_id);
       setJob(next);
       setStage("training");

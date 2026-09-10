@@ -296,8 +296,23 @@ class WakeOnboardingService:
             if current is not None and current.view.status == "running":
                 raise ValueError("Trening tej nazwy już trwa")
         required = {step.id for step in session.view.curriculum}
-        if not required.issubset(session.view.accepted_step_ids):
-            raise ValueError("Najpierw zaakceptuj wszystkie prowadzone próbki")
+        # Reconcile the in-memory view with files already accepted before a
+        # transient UI/core desynchronization. This preserves completed work.
+        on_disk = {
+            path.stem
+            for path in session.directory.glob("*.pcm")
+            if path.is_file() and path.stat().st_size > 0
+        }
+        accepted = tuple(
+            step.id
+            for step in session.view.curriculum
+            if step.id in required and step.id in on_disk
+        )
+        if set(accepted) != set(session.view.accepted_step_ids):
+            session.view = session.view.model_copy(update={"accepted_step_ids": accepted})
+        missing = [step.id for step in session.view.curriculum if step.id not in accepted]
+        if missing:
+            raise ValueError(f"Brakuje próbek: {', '.join(missing)}")
         self._generation += 1
         generation = self._generation
         job_id = uuid4()
