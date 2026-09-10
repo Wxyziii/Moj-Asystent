@@ -1,385 +1,264 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moj-asystent.local/protocol/v1",
-  "title": "Mój Asystent protocol 1.1",
+  "title": "Mój Asystent protocol 1.2",
   "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "state": {
+      "enum": [
+        "idle",
+        "wake_detected",
+        "listening",
+        "transcribing",
+        "thinking",
+        "speaking",
+        "follow_up",
+        "error"
+      ]
+    },
+    "envelope": {
+      "type": "object",
+      "properties": {
+        "protocol_version": { "const": "1.2" },
+        "event_id": { "$ref": "#/$defs/uuid" },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
+        },
+        "correlation_id": {
+          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }]
+        },
+        "type": { "type": "string" },
+        "payload": { "type": "object" }
+      },
+      "required": [
+        "protocol_version",
+        "event_id",
+        "occurred_at",
+        "correlation_id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "clientHello": {
+      "type": "object",
+      "properties": {
+        "client_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "protocol_version": { "const": "1.2" }
+      },
+      "required": ["client_id", "protocol_version"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {
-        "service": {
-          "const": "core"
+        "service": { "const": "core" },
+        "status": { "enum": ["ready", "stopping"] },
+        "protocol_version": { "const": "1.2" },
+        "assistant_state": { "$ref": "#/$defs/state" }
+      },
+      "required": ["service", "status", "protocol_version", "assistant_state"],
+      "additionalProperties": false
+    },
+    "stateChanged": {
+      "type": "object",
+      "properties": {
+        "previous_state": {
+          "anyOf": [{ "$ref": "#/$defs/state" }, { "type": "null" }]
         },
+        "state": { "$ref": "#/$defs/state" }
+      },
+      "required": ["previous_state", "state"],
+      "additionalProperties": false
+    },
+    "transcript": {
+      "type": "object",
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/uuid" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "language": { "const": "pl" },
+        "duration_ms": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      },
+      "required": ["operation_id", "text", "language", "duration_ms"],
+      "additionalProperties": false
+    },
+    "responseStarted": {
+      "type": "object",
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/uuid" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "mode": { "enum": ["voice", "text"] }
+      },
+      "required": ["operation_id", "model", "mode"],
+      "additionalProperties": false
+    },
+    "responseDelta": {
+      "type": "object",
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/uuid" },
+        "sequence": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      },
+      "required": ["operation_id", "sequence", "text"],
+      "additionalProperties": false
+    },
+    "responseCompleted": {
+      "type": "object",
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/uuid" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "spoken_text": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 1024 },
+            { "type": "null" }
+          ]
+        },
+        "kind": { "const": "local_model" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["operation_id", "text", "spoken_text", "kind", "model"],
+      "additionalProperties": false
+    },
+    "modelStatus": {
+      "type": "object",
+      "properties": {
+        "provider": { "const": "ollama" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 },
         "status": {
-          "enum": ["ready", "stopping"]
+          "enum": ["unavailable", "missing", "loading", "ready", "error"]
         },
-        "protocol_version": {
-          "const": "1.1"
-        },
-        "assistant_state": {
-          "type": "string",
-          "enum": [
-            "idle",
-            "wake_detected",
-            "listening",
-            "transcribing",
-            "thinking",
-            "speaking",
-            "follow_up",
-            "error"
+        "detail": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 256 },
+            { "type": "null" }
           ]
         }
       },
-      "required": ["service", "status", "protocol_version", "assistant_state"],
+      "required": ["provider", "model", "status", "detail"],
+      "additionalProperties": false
+    },
+    "systemError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_message",
+            "unsupported_protocol",
+            "invalid_origin",
+            "message_too_large"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "required": ["code", "message"],
       "additionalProperties": false
     }
   },
   "oneOf": [
     {
-      "type": "object",
-      "properties": {
-        "protocol_version": {
-          "const": "1.1"
-        },
-        "event_id": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "occurred_at": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
-        },
-        "correlation_id": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "type": {
-          "const": "client.hello"
-        },
-        "payload": {
-          "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
           "properties": {
-            "client_id": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "protocol_version": {
-              "const": "1.1"
-            }
-          },
-          "required": ["client_id", "protocol_version"],
-          "additionalProperties": false
+            "type": { "const": "client.hello" },
+            "payload": { "$ref": "#/$defs/clientHello" }
+          }
         }
-      },
-      "required": [
-        "protocol_version",
-        "event_id",
-        "occurred_at",
-        "correlation_id",
-        "type",
-        "payload"
-      ],
-      "additionalProperties": false
+      ]
     },
     {
-      "type": "object",
-      "properties": {
-        "protocol_version": { "const": "1.1" },
-        "event_id": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "occurred_at": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
-        },
-        "correlation_id": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            { "type": "null" }
-          ]
-        },
-        "type": { "const": "audio.transcript.final" },
-        "payload": {
-          "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
           "properties": {
-            "operation_id": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            "text": { "type": "string", "minLength": 1, "maxLength": 8192 },
-            "language": { "const": "pl" },
-            "duration_ms": { "type": "integer", "minimum": 1, "maximum": 120000 }
-          },
-          "required": ["operation_id", "text", "language", "duration_ms"],
-          "additionalProperties": false
+            "type": { "const": "system.health" },
+            "payload": { "$ref": "#/$defs/health" }
+          }
         }
-      },
-      "required": [
-        "protocol_version",
-        "event_id",
-        "occurred_at",
-        "correlation_id",
-        "type",
-        "payload"
-      ],
-      "additionalProperties": false
+      ]
     },
     {
-      "type": "object",
-      "properties": {
-        "protocol_version": { "const": "1.1" },
-        "event_id": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "occurred_at": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
-        },
-        "correlation_id": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            { "type": "null" }
-          ]
-        },
-        "type": { "const": "assistant.response.completed" },
-        "payload": {
-          "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
           "properties": {
-            "operation_id": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            "text": { "type": "string", "minLength": 1, "maxLength": 8192 },
-            "kind": { "const": "milestone_3_placeholder" }
-          },
-          "required": ["operation_id", "text", "kind"],
-          "additionalProperties": false
+            "type": { "const": "assistant.state.changed" },
+            "payload": { "$ref": "#/$defs/stateChanged" }
+          }
         }
-      },
-      "required": [
-        "protocol_version",
-        "event_id",
-        "occurred_at",
-        "correlation_id",
-        "type",
-        "payload"
-      ],
-      "additionalProperties": false
+      ]
     },
     {
-      "type": "object",
-      "properties": {
-        "protocol_version": {
-          "const": "1.1"
-        },
-        "event_id": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "occurred_at": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
-        },
-        "correlation_id": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "type": {
-          "const": "system.health"
-        },
-        "payload": {
-          "$ref": "#/$defs/health"
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "audio.transcript.final" },
+            "payload": { "$ref": "#/$defs/transcript" }
+          }
         }
-      },
-      "required": [
-        "protocol_version",
-        "event_id",
-        "occurred_at",
-        "correlation_id",
-        "type",
-        "payload"
-      ],
-      "additionalProperties": false
+      ]
     },
     {
-      "type": "object",
-      "properties": {
-        "protocol_version": {
-          "const": "1.1"
-        },
-        "event_id": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "occurred_at": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
-        },
-        "correlation_id": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "type": {
-          "const": "assistant.state.changed"
-        },
-        "payload": {
-          "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
           "properties": {
-            "previous_state": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "enum": [
-                    "idle",
-                    "wake_detected",
-                    "listening",
-                    "transcribing",
-                    "thinking",
-                    "speaking",
-                    "follow_up",
-                    "error"
-                  ]
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "state": {
-              "type": "string",
-              "enum": [
-                "idle",
-                "wake_detected",
-                "listening",
-                "transcribing",
-                "thinking",
-                "speaking",
-                "follow_up",
-                "error"
-              ]
-            }
-          },
-          "required": ["previous_state", "state"],
-          "additionalProperties": false
+            "type": { "const": "assistant.response.started" },
+            "payload": { "$ref": "#/$defs/responseStarted" }
+          }
         }
-      },
-      "required": [
-        "protocol_version",
-        "event_id",
-        "occurred_at",
-        "correlation_id",
-        "type",
-        "payload"
-      ],
-      "additionalProperties": false
+      ]
     },
     {
-      "type": "object",
-      "properties": {
-        "protocol_version": {
-          "const": "1.1"
-        },
-        "event_id": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "occurred_at": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
-        },
-        "correlation_id": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "type": {
-          "const": "system.error"
-        },
-        "payload": {
-          "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
           "properties": {
-            "code": {
-              "enum": [
-                "invalid_message",
-                "unsupported_protocol",
-                "invalid_origin",
-                "message_too_large"
-              ]
-            },
-            "message": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          },
-          "required": ["code", "message"],
-          "additionalProperties": false
+            "type": { "const": "assistant.response.delta" },
+            "payload": { "$ref": "#/$defs/responseDelta" }
+          }
         }
-      },
-      "required": [
-        "protocol_version",
-        "event_id",
-        "occurred_at",
-        "correlation_id",
-        "type",
-        "payload"
-      ],
-      "additionalProperties": false
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "assistant.response.completed" },
+            "payload": { "$ref": "#/$defs/responseCompleted" }
+          }
+        }
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "model.status.changed" },
+            "payload": { "$ref": "#/$defs/modelStatus" }
+          }
+        }
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "system.error" },
+            "payload": { "$ref": "#/$defs/systemError" }
+          }
+        }
+      ]
     }
   ]
 }

@@ -4,11 +4,27 @@
 
 Decision: desktop and core exchange explicit protocol-v1 envelopes over a localhost-only HTTP/WebSocket boundary. Every event contains a protocol version, event ID, UTC timestamp and nullable correlation ID. Unknown event types, extra fields and incompatible versions are rejected before they reach assistant state handling.
 
-Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.0` client therefore rejects `1.1`. Protocol `1.1` is the current exact capability set and adds authenticated final-transcript and completed-placeholder-response events. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.1`. Any breaking schema or behavior change requires a new major version.
+Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.1` client therefore rejects `1.2`. Protocol `1.2` is the current exact capability set and adds authenticated model-status and streamed local-response events to the `1.1` voice events. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.2`. Any breaking schema or behavior change requires a new major version.
 
 Connection rule: the desktop proves liveness through a bounded health check and a correlated WebSocket handshake, then reconnects with exponential backoff capped at 30 seconds. The core owns the authoritative state on one event loop and correlates every outbound event to that session's hello event. Event IDs are unique within a stream and duplicate IDs are rejected; events from superseded desktop connection attempts are ignored.
 
 Reason: it allows the Tauri UI and Python core to evolve independently without treating local payloads as trusted or silently changing assistant behavior.
+
+## 2026-09-10 — Loopback Ollama conversation provider
+
+Decision: the first main chat model is `qwen3.5:4b` through a replaceable
+provider interface. The provider accepts only explicit HTTP loopback origins,
+does not use environment proxy settings, validates bounded streaming frames and
+never exposes Ollama-specific payloads to the desktop. Model weights are an
+explicit local installation rather than an automatic application download.
+
+Short conversation history is bounded and memory-only. Full overlay text uses
+the streamed model answer; spoken output is a deterministic short derivative
+of that answer. Persistent memory, tool calls and hardware-aware model routing
+remain later milestones.
+
+Reason: this establishes useful private local chat while keeping model runtime,
+UI, future memory and future tool authorization as separate responsibilities.
 
 ## 2026-09-10 — Per-launch local core credential
 

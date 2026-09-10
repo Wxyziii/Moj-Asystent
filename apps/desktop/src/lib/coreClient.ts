@@ -2,6 +2,7 @@ import {
   createClientHello,
   parseHealth,
   parseProtocolEvent,
+  PROTOCOL_VERSION,
   type AssistantState,
   type ProtocolEvent,
 } from "@moj-asystent/protocol";
@@ -12,10 +13,19 @@ const HANDSHAKE_TIMEOUT = 5_000;
 const LIVENESS_TIMEOUT = 25_000;
 const MAX_MESSAGE_BYTES = 32_768;
 const credentialPattern = /^[A-Za-z0-9_-]{43,128}$/;
+const uuidPattern =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export type CoreContentEvent = Extract<
   ProtocolEvent,
-  { type: "audio.transcript.final" | "assistant.response.completed" }
+  {
+    type:
+      | "audio.transcript.final"
+      | "assistant.response.started"
+      | "assistant.response.delta"
+      | "assistant.response.completed"
+      | "model.status.changed";
+  }
 >;
 
 /** One owned connection at a time; every callback is scoped to its attempt. */
@@ -93,6 +103,7 @@ export function connectToCore(
       let phase: "health" | "snapshot" | "ready" = "health";
       let previousState: AssistantState | undefined;
       const seen = new Set<string>();
+      const responseSequences = new Map<string, number>();
       connection.addEventListener("open", () => {
         if (active()) connection.send(JSON.stringify(hello));
       });
@@ -132,11 +143,43 @@ export function connectToCore(
           }
           if (
             event.type === "audio.transcript.final" ||
-            event.type === "assistant.response.completed"
+            event.type === "assistant.response.started" ||
+            event.type === "assistant.response.delta" ||
+            event.type === "assistant.response.completed" ||
+            event.type === "model.status.changed"
           ) {
             if (phase !== "ready") {
               fail();
               return;
+            }
+            if (event.type === "assistant.response.started") {
+              if (responseSequences.has(event.payload.operation_id)) {
+                fail();
+                return;
+              }
+              responseSequences.set(event.payload.operation_id, -1);
+            }
+            if (event.type === "assistant.response.delta") {
+              const previous = responseSequences.get(
+                event.payload.operation_id,
+              );
+              if (
+                previous === undefined ||
+                event.payload.sequence !== previous + 1
+              ) {
+                fail();
+                return;
+              }
+              responseSequences.set(
+                event.payload.operation_id,
+                event.payload.sequence,
+              );
+            }
+            if (event.type === "assistant.response.completed") {
+              if (!responseSequences.delete(event.payload.operation_id)) {
+                fail();
+                return;
+              }
             }
             onContent(event);
             armDeadline(LIVENESS_TIMEOUT);
@@ -192,6 +235,53 @@ export async function sendAudioCommand(
     redirect: "error",
   });
   if (!response.ok) throw new Error("Core rejected audio command");
+}
+
+export async function sendChatMessage(
+  text: string,
+  credential: string,
+  baseUrl = defaultUrl,
+): Promise<string> {
+  const normalized = text.trim();
+  if (!credentialPattern.test(credential))
+    throw new Error("Invalid credential");
+  if (!normalized || Array.from(normalized).length > 8_192)
+    throw new Error("Invalid message");
+  const url = validateCoreUrl(baseUrl);
+  const response = await fetch(`${url.origin}/chat`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credential}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      protocol_version: PROTOCOL_VERSION,
+      text: normalized,
+    }),
+    redirect: "error",
+  });
+  const body = await response.text();
+  if (new TextEncoder().encode(body).length > MAX_MESSAGE_BYTES)
+    throw new Error("Core chat response is too large");
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    throw new Error("Core returned an invalid chat response");
+  }
+  if (
+    !response.ok ||
+    typeof value !== "object" ||
+    value === null ||
+    Object.keys(value).length !== 2 ||
+    !("status" in value) ||
+    value.status !== "accepted" ||
+    !("operation_id" in value) ||
+    typeof value.operation_id !== "string" ||
+    !uuidPattern.test(value.operation_id)
+  )
+    throw new Error("Core rejected chat message");
+  return value.operation_id;
 }
 
 function validateCoreUrl(baseUrl: string): URL {

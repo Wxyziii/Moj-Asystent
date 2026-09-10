@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Custom wake-name onboarding",
-    "status": "Milestone 4 complete — guided Polish name training, local validation and atomic wake-model activation",
+    "stage": "Local AI conversation",
+    "status": "Milestone 5 complete — local Polish Qwen chat, streaming overlay responses and concise voice replies",
     "updated": "2026-09-10"
   },
   "principles": [
@@ -59,8 +59,8 @@
     {
       "id": 5,
       "name": "Local AI",
-      "status": "planned",
-      "description": "Qwen3.5 4B, Polish prompt, streaming and model lifecycle."
+      "status": "done",
+      "description": "Loopback Ollama, Qwen3.5 4B, Polish prompt, bounded context, streaming and model lifecycle."
     },
     {
       "id": 6,
@@ -100,6 +100,16 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-10",
+      "title": "Milestone 5: local AI conversation",
+      "items": [
+        "Added a replaceable loopback-only Ollama provider with Qwen3.5 4B and a Polish-only prompt.",
+        "Added bounded in-memory conversation context plus cancellable Protocol 1.2 response streaming.",
+        "Enabled authenticated typed chat and model lifecycle states in the desktop overlay.",
+        "Added rich display responses, concise voice replies and verified a real Polish model response on target hardware."
+      ]
+    },
     {
       "date": "2026-09-10",
       "title": "Milestone 4: custom wake-name onboarding",

@@ -674,6 +674,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "faster-whisper" },
+    { name = "httpx" },
     { name = "numpy" },
     { name = "onnx" },
     { name = "openwakeword" },
@@ -688,7 +689,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "jsonschema", extra = ["format"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -700,6 +700,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "faster-whisper", specifier = ">=1.2.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "onnx", specifier = ">=1.20.1,<2" },
     { name = "openwakeword", specifier = ">=0.4.0" },
@@ -714,7 +715,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema", extras = ["format"], specifier = ">=4.26.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },

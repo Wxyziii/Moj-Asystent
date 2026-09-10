@@ -26,7 +26,7 @@ def test_training_controls_require_authentication_and_reject_extra_fields(tmp_pa
         malformed = client.post(
             "/onboarding/sessions",
             headers=AUTH,
-            json={"protocol_version": "1.1", "name": "Nora", "model_path": "C:/outside/model.onnx"},
+            json={"protocol_version": "1.2", "name": "Nora", "model_path": "C:/outside/model.onnx"},
         )
     assert malformed.status_code == 422
 
@@ -36,7 +36,7 @@ def test_authenticated_session_returns_analysis_and_guided_curriculum(tmp_path: 
         response = client.post(
             "/onboarding/sessions",
             headers=AUTH,
-            json={"protocol_version": "1.1", "name": "  Żorina  ", "microphone_device": 2},
+            json={"protocol_version": "1.2", "name": "  Żorina  ", "microphone_device": 2},
         )
         status = client.get("/onboarding/status", headers=AUTH)
     assert response.status_code == 200
@@ -54,7 +54,7 @@ def test_audio_payload_is_validated_before_session_lookup(tmp_path: Path) -> Non
             headers=AUTH,
             json={
                 "session_id": "4fa6ec1d-3379-4c4c-9451-93e515d91e12",
-                "protocol_version": "1.1",
+                "protocol_version": "1.2",
                 "step_id": "../../escape",
                 "sample_rate": 16_000,
                 "pcm_s16le": base64.b64encode(b"\0\0" * 100).decode(),

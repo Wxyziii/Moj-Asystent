@@ -23,12 +23,12 @@ PROTOCOLS = (Subprotocol("moj-asystent.v1"), Subprotocol(f"credential.{TOKEN}"))
 
 def hello() -> dict:
     return {
-        "protocol_version": "1.1",
+        "protocol_version": "1.2",
         "event_id": str(uuid4()),
         "occurred_at": "2026-09-09T20:00:00Z",
         "correlation_id": None,
         "type": "client.hello",
-        "payload": {"client_id": "integration", "protocol_version": "1.1"},
+        "payload": {"client_id": "integration", "protocol_version": "1.2"},
     }
 
 
@@ -83,6 +83,8 @@ async def test_real_websocket_broadcast_disconnect_shutdown_and_restart() -> Non
                     == greeting["event_id"]
                 )
                 assert snapshot.payload.state == "idle"
+                model_status = parse_event(json.loads(await asyncio.wait_for(connection.recv(), 2)))
+                assert model_status.type == "model.status.changed"
             runtime = server.config.app.state.runtime
             runtime.transition("listening")
             one, two = await asyncio.gather(first.recv(), second.recv())
@@ -126,6 +128,7 @@ async def test_lifespan_shutdown_cancels_pending_handshake_and_sender() -> None:
         connect(f"ws://127.0.0.1:{port}/ws", subprotocols=PROTOCOLS) as ready,
     ):
         await ready.send(json.dumps(hello()))
+        await ready.recv()
         await ready.recv()
         await ready.recv()
         runtime = server.config.app.state.runtime

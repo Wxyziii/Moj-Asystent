@@ -8,7 +8,7 @@ class InvalidStateTransition(ValueError):
 
 
 _TRANSITIONS: dict[AssistantState, frozenset[AssistantState]] = {
-    "idle": frozenset({"wake_detected", "listening", "error"}),
+    "idle": frozenset({"wake_detected", "listening", "thinking", "error"}),
     "wake_detected": frozenset({"listening", "idle", "error"}),
     "listening": frozenset({"transcribing", "idle", "error"}),
     "transcribing": frozenset({"thinking", "idle", "error"}),

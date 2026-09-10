@@ -2,7 +2,7 @@
 
 A local-first, Polish-only desktop AI assistant for Windows with voice activation, an overlay chat interface, screen awareness, system telemetry, memory, and controlled tool execution.
 
-> Project status: **Planning / foundation**
+> Project status: **Milestone 5 complete — local Polish AI conversation**
 
 ## Product goal
 
@@ -30,7 +30,7 @@ Example target interaction:
 - No unrestricted shell access for the everyday assistant.
 - No continuous full-screen vision processing.
 
-## Planned stack
+## Stack
 
 - **Desktop:** Tauri 2 + React + TypeScript
 - **Native desktop integration:** Rust
@@ -72,4 +72,7 @@ The deployment workflow is in `.github/workflows/pages.yml`.
 
 ## Status
 
-The repository is currently being prepared as a source-of-truth specification for Codex. Implementation should begin with the desktop shell and audio pipeline, following the phased plan in `docs/IMPLEMENTATION_PLAN.md`.
+Milestones 1–5 are implemented: the Windows overlay, authenticated local core,
+Polish audio pipeline, trained custom wake name and local streamed Qwen chat.
+Tool execution, Windows context, telemetry, persistent memory and proactive
+watchers remain later milestones. See `docs/ROADMAP.md` for the exact scope.

@@ -36,5 +36,7 @@ def main() -> None:
             credential=SessionCredential.from_value(raw_credential),
             audio=AudioConfig.from_environment(),
             audio_enabled=True,
+            ollama_url=os.environ.get("MOJ_ASYSTENT_OLLAMA_URL", "http://127.0.0.1:11434"),
+            llm_model=os.environ.get("MOJ_ASYSTENT_LLM_MODEL", "qwen3.5:4b"),
         )
     ).run()

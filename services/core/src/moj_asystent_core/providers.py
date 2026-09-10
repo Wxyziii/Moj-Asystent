@@ -6,24 +6,25 @@ from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .llm import (
+    LanguageModelProvider,
+    LanguageModelRequest,
+    ModelStatus,
+    ProviderUnavailableError,
+)
+
 if TYPE_CHECKING:
     from .audio import PcmFrame
 
-
-class ProviderUnavailableError(RuntimeError):
-    """A safe failure used until a real local engine is configured."""
+__all__ = [
+    "LanguageModelProvider",
+    "LanguageModelRequest",
+    "ProviderUnavailableError",
+]
 
 
 class ProviderModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class LanguageModelRequest(ProviderModel):
-    prompt: str = Field(min_length=1, max_length=32_768)
-
-
-class LanguageModelResponse(ProviderModel):
-    text: str
 
 
 class SpeechToTextRequest(ProviderModel):
@@ -66,11 +67,6 @@ class WakeWordResponse(ProviderModel):
 
 
 @runtime_checkable
-class LanguageModelProvider(Protocol):
-    async def generate(self, request: LanguageModelRequest) -> LanguageModelResponse: ...
-
-
-@runtime_checkable
 class SpeechToTextProvider(Protocol):
     async def transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse: ...
 
@@ -99,8 +95,19 @@ class VoiceActivityProvider(Protocol):
 
 
 class MockLanguageModelProvider:
-    async def generate(self, request: LanguageModelRequest) -> LanguageModelResponse:
-        raise ProviderUnavailableError("LLM provider is not available before Milestone 5")
+    @property
+    def model(self) -> str:
+        return "mock"
+
+    async def status(self) -> ModelStatus:
+        return ModelStatus(model="mock", state="unavailable", detail="Mock provider")
+
+    async def stream(self, request: LanguageModelRequest):
+        raise ProviderUnavailableError("Mock LLM provider is intentionally unavailable")
+        yield ""  # pragma: no cover
+
+    async def close(self) -> None:
+        pass
 
 
 class MockSpeechToTextProvider:

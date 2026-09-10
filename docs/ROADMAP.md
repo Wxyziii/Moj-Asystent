@@ -114,7 +114,7 @@ Target-hardware validation completed with real human microphone input: voice det
 
 ## Milestone 5 — Local AI chat
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -124,6 +124,17 @@ Deliverables:
 - streaming responses;
 - local-only mode;
 - separate voice/display response formatting.
+
+Completed scope:
+
+- replaceable loopback-only Ollama provider with `qwen3.5:4b` as the default;
+- Polish-only system prompt with an explicit no-system-actions boundary;
+- validated, cancellable response streaming through exact Protocol 1.2 events;
+- bounded process-local conversation context containing completed turns only;
+- authenticated typed-chat endpoint and enabled desktop composer;
+- visible unavailable, missing, loading, ready and error model states;
+- full overlay answer plus a deterministic two-sentence spoken variant for Piper;
+- real local runtime validation with Ollama 0.34.0 and `qwen3.5:4b` on target hardware.
 
 ## Milestone 6 — Tool/permission engine
 

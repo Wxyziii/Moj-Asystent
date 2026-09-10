@@ -1,14 +1,18 @@
 """Single-event-loop state ownership and bounded, ordered subscriptions."""
 
 import asyncio
+from typing import Literal
 from uuid import UUID
 
 from .protocol import (
     PROTOCOL_VERSION,
     AssistantResponseCompletedPayload,
+    AssistantResponseDeltaPayload,
+    AssistantResponseStartedPayload,
     AssistantState,
     AssistantStateChanged,
     AudioTranscriptFinalPayload,
+    ModelStatusChangedPayload,
     ProtocolEvent,
     SystemHealthPayload,
     new_event,
@@ -24,6 +28,7 @@ class CoreRuntime:
         self._subscriptions: dict[asyncio.Queue[ProtocolEvent | None], UUID] = {}
         self.sessions: set[asyncio.Task[None]] = set()
         self.stopping = False
+        self._model_status: ModelStatusChangedPayload | None = None
 
     def _assert_owner(self) -> None:
         if asyncio.get_running_loop() is not self._loop:
@@ -52,6 +57,10 @@ class CoreRuntime:
         queue.put_nowait(new_event("system.health", self.health_payload(), correlation_id=hello_id))
         snapshot = self._machine.synchronize().model_copy(update={"correlation_id": hello_id})
         queue.put_nowait(snapshot)
+        if self._model_status is not None:
+            queue.put_nowait(
+                new_event("model.status.changed", self._model_status, correlation_id=hello_id)
+            )
         self._subscriptions[queue] = hello_id
         return queue
 
@@ -107,17 +116,50 @@ class CoreRuntime:
             )
         )
 
-    def publish_placeholder_response(self, operation_id: UUID, text: str) -> None:
+    def publish_response_started(
+        self, operation_id: UUID, *, model: str, mode: Literal["voice", "text"]
+    ) -> None:
+        self.publish(
+            new_event(
+                "assistant.response.started",
+                AssistantResponseStartedPayload(operation_id=operation_id, model=model, mode=mode),
+            )
+        )
+
+    def publish_response_delta(self, operation_id: UUID, sequence: int, text: str) -> None:
+        self.publish(
+            new_event(
+                "assistant.response.delta",
+                AssistantResponseDeltaPayload(
+                    operation_id=operation_id, sequence=sequence, text=text
+                ),
+            )
+        )
+
+    def publish_response_completed(
+        self,
+        operation_id: UUID,
+        text: str,
+        *,
+        spoken_text: str | None,
+        model: str,
+    ) -> None:
         self.publish(
             new_event(
                 "assistant.response.completed",
                 AssistantResponseCompletedPayload(
                     operation_id=operation_id,
                     text=text,
-                    kind="milestone_3_placeholder",
+                    spoken_text=spoken_text,
+                    kind="local_model",
+                    model=model,
                 ),
             )
         )
+
+    def set_model_status(self, payload: ModelStatusChangedPayload) -> None:
+        self._model_status = payload
+        self.publish(new_event("model.status.changed", payload))
 
     async def shutdown(self) -> None:
         self._assert_owner()

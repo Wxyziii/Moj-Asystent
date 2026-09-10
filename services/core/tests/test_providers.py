@@ -28,7 +28,12 @@ async def test_stubs_substitute_at_the_real_provider_interfaces() -> None:
     assert isinstance(tts, TextToSpeechProvider)
     assert isinstance(wake, WakeWordProvider)
     with pytest.raises(ProviderUnavailableError):
-        await llm.generate(LanguageModelRequest(prompt="test"))
+        _ = [
+            chunk
+            async for chunk in llm.stream(
+                LanguageModelRequest(messages=({"role": "user", "content": "test"},))
+            )
+        ]
     with pytest.raises(ProviderUnavailableError):
         await stt.transcribe(
             SpeechToTextRequest(

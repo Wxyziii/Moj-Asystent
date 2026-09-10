@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, field_validator
 
-PROTOCOL_VERSION = "1.1"
+PROTOCOL_VERSION = "1.2"
 AssistantState = Literal[
     "idle",
     "wake_detected",
@@ -46,13 +46,13 @@ class EventPayload(StrictModel):
 
 class ClientHelloPayload(EventPayload):
     client_id: Annotated[str, Field(min_length=1, max_length=128)]
-    protocol_version: Literal["1.1"]
+    protocol_version: Literal["1.2"]
 
 
 class SystemHealthPayload(EventPayload):
     service: Literal["core"]
     status: Literal["ready", "stopping"]
-    protocol_version: Literal["1.1"]
+    protocol_version: Literal["1.2"]
     assistant_state: AssistantState
 
 
@@ -73,15 +73,46 @@ class AudioTranscriptFinalPayload(EventPayload):
         return _validate_hyphenated_uuid(value)
 
 
-class AssistantResponseCompletedPayload(EventPayload):
+class AssistantResponseStartedPayload(EventPayload):
     operation_id: UUID
-    text: Annotated[str, Field(min_length=1, max_length=8_192)]
-    kind: Literal["milestone_3_placeholder"]
+    model: Annotated[str, Field(min_length=1, max_length=128)]
+    mode: Literal["voice", "text"]
 
     @field_validator("operation_id", mode="before")
     @classmethod
     def validate_operation_id(cls, value: object) -> object:
         return _validate_hyphenated_uuid(value)
+
+
+class AssistantResponseDeltaPayload(EventPayload):
+    operation_id: UUID
+    sequence: Annotated[StrictInt, Field(ge=0, le=100_000)]
+    text: Annotated[str, Field(min_length=1, max_length=4_096)]
+
+    @field_validator("operation_id", mode="before")
+    @classmethod
+    def validate_operation_id(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
+class AssistantResponseCompletedPayload(EventPayload):
+    operation_id: UUID
+    text: Annotated[str, Field(min_length=1, max_length=8_192)]
+    spoken_text: Annotated[str, Field(min_length=1, max_length=1_024)] | None
+    kind: Literal["local_model"]
+    model: Annotated[str, Field(min_length=1, max_length=128)]
+
+    @field_validator("operation_id", mode="before")
+    @classmethod
+    def validate_operation_id(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
+class ModelStatusChangedPayload(EventPayload):
+    provider: Literal["ollama"]
+    model: Annotated[str, Field(min_length=1, max_length=128)]
+    status: Literal["unavailable", "missing", "loading", "ready", "error"]
+    detail: Annotated[str, Field(min_length=1, max_length=256)] | None
 
 
 class SystemErrorPayload(EventPayload):
@@ -90,7 +121,7 @@ class SystemErrorPayload(EventPayload):
 
 
 class EventBase(StrictModel):
-    protocol_version: Literal["1.1"]
+    protocol_version: Literal["1.2"]
     event_id: UUID
     occurred_at: datetime
     correlation_id: UUID | None
@@ -135,9 +166,24 @@ class AudioTranscriptFinal(EventBase):
     payload: AudioTranscriptFinalPayload
 
 
+class AssistantResponseStarted(EventBase):
+    type: Literal["assistant.response.started"]
+    payload: AssistantResponseStartedPayload
+
+
+class AssistantResponseDelta(EventBase):
+    type: Literal["assistant.response.delta"]
+    payload: AssistantResponseDeltaPayload
+
+
 class AssistantResponseCompleted(EventBase):
     type: Literal["assistant.response.completed"]
     payload: AssistantResponseCompletedPayload
+
+
+class ModelStatusChanged(EventBase):
+    type: Literal["model.status.changed"]
+    payload: ModelStatusChangedPayload
 
 
 class SystemError(EventBase):
@@ -150,7 +196,10 @@ type ProtocolEvent = (
     | SystemHealth
     | AssistantStateChanged
     | AudioTranscriptFinal
+    | AssistantResponseStarted
+    | AssistantResponseDelta
     | AssistantResponseCompleted
+    | ModelStatusChanged
     | SystemError
 )
 _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
@@ -158,7 +207,10 @@ _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
     "system.health": SystemHealth,
     "assistant.state.changed": AssistantStateChanged,
     "audio.transcript.final": AudioTranscriptFinal,
+    "assistant.response.started": AssistantResponseStarted,
+    "assistant.response.delta": AssistantResponseDelta,
     "assistant.response.completed": AssistantResponseCompleted,
+    "model.status.changed": ModelStatusChanged,
     "system.error": SystemError,
 }
 
@@ -169,7 +221,7 @@ def parse_event(value: object) -> ProtocolEvent:
     version = value.get("protocol_version")
     if version != PROTOCOL_VERSION:
         raise ProtocolValidationError(
-            "Unsupported protocol_version; expected 1.1",
+            "Unsupported protocol_version; expected 1.2",
             "unsupported_protocol",
         )
     event_type = value.get("type")
@@ -199,7 +251,10 @@ def new_event(
         "system.health",
         "assistant.state.changed",
         "audio.transcript.final",
+        "assistant.response.started",
+        "assistant.response.delta",
         "assistant.response.completed",
+        "model.status.changed",
         "system.error",
     ],
     payload: EventPayload,
@@ -209,7 +264,10 @@ def new_event(
     SystemHealth
     | AssistantStateChanged
     | AudioTranscriptFinal
+    | AssistantResponseStarted
+    | AssistantResponseDelta
     | AssistantResponseCompleted
+    | ModelStatusChanged
     | SystemError
 ):
     values = {
@@ -224,7 +282,10 @@ def new_event(
         SystemHealth
         | AssistantStateChanged
         | AudioTranscriptFinal
+        | AssistantResponseStarted
+        | AssistantResponseDelta
         | AssistantResponseCompleted
+        | ModelStatusChanged
         | SystemError,
         parse_event(values),
     )

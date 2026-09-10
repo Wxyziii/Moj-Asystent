@@ -255,10 +255,15 @@ Use a shared schema package for messages such as:
 
 - `assistant.state.changed`
 - `audio.transcript.final`
+- `assistant.response.started`
+- `assistant.response.delta`
 - `assistant.response.completed`
+- `model.status.changed`
 - `system.health`
 
-This is the implemented Protocol `1.1` set. The other planned event families
+This is the implemented Protocol `1.2` set. Response streams carry one
+operation ID and strictly increasing sequence numbers; reconnecting clients
+cannot accept events correlated to an older WebSocket hello. The other planned event families
 are added only with their owning milestones.
 
 Messages should include IDs so long-running actions can be correlated.
@@ -285,6 +290,10 @@ explicit/deep complex task -> larger llama.cpp hybrid tier
 ```
 
 Before loading a larger tier, check available VRAM/RAM and current gaming/high-load state.
+
+Milestone 5 implements only the normal conversation branch through the
+replaceable local Ollama provider. Tool selection, telemetry-aware routing and
+larger tiers remain assigned to their later milestones.
 
 ## Failure model
 

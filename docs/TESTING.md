@@ -94,6 +94,13 @@ Manual testing completed on 2026-09-10 confirms that the Milestone 3 microphone 
 
 This validates the basic real-device voice and wake path. Polish STT accuracy remains model-, microphone- and utterance-dependent and is tracked separately from wake-call success.
 
+Milestone 5 was also validated against a real local Ollama 0.34.0 runtime with
+`qwen3.5:4b` on the target machine. The production provider reported `ready`,
+accepted the Polish system prompt, streamed a complete response through its
+validated adapter and answered the Polish language check in Polish. Automated
+tests separately cover desktop stream assembly, cancellation, missing/runtime
+failure states and the authenticated core boundary.
+
 ## Model evaluation
 
 Maintain a small Polish benchmark set covering:

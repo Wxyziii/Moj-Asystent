@@ -1,5 +1,29 @@
 # AI Model Strategy
 
+## Implemented local chat (Milestone 5)
+
+The initial chat path uses `qwen3.5:4b` through Ollama at the loopback-only
+origin `http://127.0.0.1:11434`. The core validates provider responses and
+streams display text through Protocol 1.2; the desktop never talks to Ollama
+directly. `MOJ_ASYSTENT_OLLAMA_URL` and `MOJ_ASYSTENT_LLM_MODEL` may select a
+different loopback Ollama origin or compatible local model without changing
+conversation orchestration.
+
+Conversation history is process-local and bounded to six completed turns and
+12,000 characters of recent user/assistant content. Cancelled or failed turns
+are not committed. This is short request context, not the persistent memory
+planned for a later milestone.
+
+The Polish system prompt explicitly limits the current assistant to
+conversation and prevents claims that a system action was executed. Rich text
+is streamed to the overlay. Voice uses a deterministic summary of at most two
+sentences and 360 characters before Piper playback, preserving a concise spoken
+experience without making a second model request.
+
+The UI distinguishes unavailable Ollama, a missing model, active loading,
+ready and failed generation states. Model installation remains explicit; the
+application does not silently download multi-gigabyte weights.
+
 ## Goals
 
 - Keep ordinary voice interactions fast.
@@ -108,11 +132,13 @@ Model routing should consider:
 
 ## Provider abstraction
 
-Suggested interfaces:
+Implemented main-chat interface:
 
 ```python
 class ChatProvider(Protocol):
-    async def generate(self, request: ChatRequest) -> ChatResponse: ...
+    async def status(self) -> ModelStatus: ...
+    def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]: ...
+    async def close(self) -> None: ...
 
 class EmbeddingProvider(Protocol):
     async def embed(self, texts: list[str]) -> list[list[float]]: ...

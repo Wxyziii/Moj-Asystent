@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = "1.1" as const;
+export const PROTOCOL_VERSION = "1.2" as const;
 
 export const assistantStates = [
   "idle",
@@ -49,7 +49,26 @@ export interface AssistantResponseCompleted extends EventBase {
   payload: {
     operation_id: string;
     text: string;
-    kind: "milestone_3_placeholder";
+    spoken_text: string | null;
+    kind: "local_model";
+    model: string;
+  };
+}
+export interface AssistantResponseStarted extends EventBase {
+  type: "assistant.response.started";
+  payload: { operation_id: string; model: string; mode: "voice" | "text" };
+}
+export interface AssistantResponseDelta extends EventBase {
+  type: "assistant.response.delta";
+  payload: { operation_id: string; sequence: number; text: string };
+}
+export interface ModelStatusChanged extends EventBase {
+  type: "model.status.changed";
+  payload: {
+    provider: "ollama";
+    model: string;
+    status: "unavailable" | "missing" | "loading" | "ready" | "error";
+    detail: string | null;
   };
 }
 export interface SystemError extends EventBase {
@@ -68,7 +87,10 @@ export type ProtocolEvent =
   | SystemHealth
   | AssistantStateChanged
   | AudioTranscriptFinal
+  | AssistantResponseStarted
+  | AssistantResponseDelta
   | AssistantResponseCompleted
+  | ModelStatusChanged
   | SystemError;
 
 export type RecordingKind =
@@ -318,11 +340,51 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         ? (value as unknown as AudioTranscriptFinal)
         : null;
     case "assistant.response.completed":
-      return exactObject(payload, ["operation_id", "text", "kind"]) &&
+      return exactObject(payload, [
+        "operation_id",
+        "text",
+        "spoken_text",
+        "kind",
+        "model",
+      ]) &&
         isUuid(payload.operation_id) &&
         boundedString(payload.text, 1, 8_192) &&
-        payload.kind === "milestone_3_placeholder"
+        (payload.spoken_text === null ||
+          boundedString(payload.spoken_text, 1, 1_024)) &&
+        payload.kind === "local_model" &&
+        boundedString(payload.model, 1, 128)
         ? (value as unknown as AssistantResponseCompleted)
+        : null;
+    case "assistant.response.started":
+      return exactObject(payload, ["operation_id", "model", "mode"]) &&
+        isUuid(payload.operation_id) &&
+        boundedString(payload.model, 1, 128) &&
+        (payload.mode === "voice" || payload.mode === "text")
+        ? (value as unknown as AssistantResponseStarted)
+        : null;
+    case "assistant.response.delta":
+      return exactObject(payload, ["operation_id", "sequence", "text"]) &&
+        isUuid(payload.operation_id) &&
+        Number.isInteger(payload.sequence) &&
+        Number(payload.sequence) >= 0 &&
+        Number(payload.sequence) <= 100_000 &&
+        boundedString(payload.text, 1, 4_096)
+        ? (value as unknown as AssistantResponseDelta)
+        : null;
+    case "model.status.changed":
+      return exactObject(payload, [
+        "provider",
+        "model",
+        "status",
+        "detail",
+      ]) &&
+        payload.provider === "ollama" &&
+        boundedString(payload.model, 1, 128) &&
+        modelStatuses.includes(
+          payload.status as (typeof modelStatuses)[number],
+        ) &&
+        (payload.detail === null || boundedString(payload.detail, 1, 256))
+        ? (value as unknown as ModelStatusChanged)
         : null;
     case "system.error":
       return exactObject(payload, ["code", "message"]) &&
@@ -359,6 +421,13 @@ const errorCodes = [
   "unsupported_protocol",
   "invalid_origin",
   "message_too_large",
+] as const;
+const modelStatuses = [
+  "unavailable",
+  "missing",
+  "loading",
+  "ready",
+  "error",
 ] as const;
 
 function exactObject(

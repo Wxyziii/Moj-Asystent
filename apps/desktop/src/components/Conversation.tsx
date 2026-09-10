@@ -5,6 +5,8 @@ import {
   MoreHorizontal,
   Square,
 } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import type { ModelStatusChanged } from "@moj-asystent/protocol";
 import {
   assistantStates,
   AssistantState,
@@ -25,6 +27,8 @@ interface ConversationProps {
   stateSource: "core" | "simulation";
   messages: ConversationMessage[];
   onToggleListening: () => void;
+  onSendMessage: (text: string) => Promise<boolean>;
+  modelStatus?: ModelStatusChanged["payload"];
 }
 
 export function Conversation({
@@ -37,11 +41,36 @@ export function Conversation({
   stateSource,
   messages,
   onToggleListening,
+  onSendMessage,
+  modelStatus,
 }: ConversationProps) {
+  const [prompt, setPrompt] = useState("");
   const isWorking = ["thinking", "transcribing", "speaking"].includes(state);
   const isListening = ["listening", "wake_detected", "follow_up"].includes(
     state,
   );
+  const canSend =
+    coreStatus === "connected" && prompt.trim().length > 0 && !isWorking;
+  const modelLabel =
+    modelStatus?.status === "ready"
+      ? `${modelStatus.model} · lokalnie`
+      : modelStatus?.status === "loading"
+        ? `${modelStatus.model} · odpowiada…`
+        : modelStatus?.status === "missing"
+          ? `Brak modelu ${modelStatus.model}`
+          : modelStatus?.status === "error"
+            ? "Model wymaga ponowienia"
+            : "Ollama niedostępna";
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSend) return;
+    const message = prompt.trim();
+    setPrompt("");
+    void onSendMessage(message).then((sent) => {
+      if (!sent) setPrompt(message);
+    });
+  };
 
   return (
     <main
@@ -95,14 +124,14 @@ export function Conversation({
       <section className="conversation__stream" aria-live="polite">
         <div className="context-strip">
           <span>Ten komputer</span>
-          <span>Brak aktywnego kontekstu</span>
+          <span>{modelLabel}</span>
         </div>
         {messages.length === 0 ? (
           <article className="message message--assistant">
             <p className="message__label">Mój Asystent</p>
             <p>
-              Powiedz krótkie zdanie po polsku. Na tym etapie odpowiem
-              deterministycznym komunikatem bez modelu AI.
+              Powiedz lub napisz coś po polsku. Odpowiedź przygotuje lokalny
+              model, a dane pozostaną na tym komputerze.
             </p>
           </article>
         ) : (
@@ -114,7 +143,7 @@ export function Conversation({
               <p className="message__label">
                 {message.role === "user" ? "Ty" : "Mój Asystent"}
               </p>
-              <p>{message.text}</p>
+              <p>{message.text || (message.streaming ? "…" : "")}</p>
             </article>
           ))
         )}
@@ -129,18 +158,23 @@ export function Conversation({
         )}
       </section>
 
-      <footer className="composer">
+      <form className="composer" onSubmit={submit}>
         <label className="sr-only" htmlFor="prompt">
           Zapytaj asystenta
         </label>
         <input
           id="prompt"
           placeholder="Zapytaj…"
-          disabled
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          disabled={coreStatus !== "connected"}
+          maxLength={8_192}
           aria-describedby="composer-help"
         />
         <span id="composer-help" className="sr-only">
-          Pole tekstowe pozostaje wyłączone do etapu lokalnego czatu.
+          {modelStatus?.status === "missing"
+            ? `Zainstaluj model poleceniem ollama pull ${modelStatus.model}.`
+            : modelStatus?.detail || "Rozmowa jest przetwarzana lokalnie."}
         </span>
         <button
           className={`mic-button ${isListening ? "mic-button--active" : ""}`}
@@ -156,10 +190,14 @@ export function Conversation({
             <Mic size={18} />
           )}
         </button>
-        <button className="send-button" disabled aria-label="Wyślij wiadomość">
+        <button
+          className="send-button"
+          disabled={!canSend}
+          aria-label="Wyślij wiadomość"
+        >
           <ArrowUp size={18} />
         </button>
-      </footer>
+      </form>
       <label className="state-switcher">
         <ChevronDown size={15} />{" "}
         {stateSource === "core" ? "Stan rdzenia" : "Stan demonstracyjny"}:{" "}

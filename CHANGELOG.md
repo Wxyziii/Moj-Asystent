@@ -6,6 +6,11 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 5 local AI conversation: replaceable Ollama provider, `qwen3.5:4b` default, Polish-only prompt and bounded in-memory context.
+- Authenticated typed chat and cancellable, ordered Protocol `1.2` response streaming into the desktop overlay.
+- Model lifecycle reporting for unavailable Ollama, missing weights, loading, ready and failed generation states.
+- Separate rich display text and concise two-sentence voice output, with real local `qwen3.5:4b` response validation on target hardware.
+
 - Milestone 4 custom assistant-name onboarding: Polish suitability scoring, generated confusables, guided recordings, calibration, quality feedback and wake-only validation.
 - Local deterministic openWakeWord-compatible ONNX trainer with cancellable jobs, bounded seeded augmentation and atomic activation/retraining.
 - Authenticated desktop/core onboarding APIs, shared TypeScript protocol parsers and a polished Polish setup wizard.
@@ -65,6 +70,8 @@ All notable project changes are tracked here.
 
 ### Decisions
 
+- Ollama communication is restricted to an explicit HTTP loopback origin; provider payloads are validated and environment proxies are disabled.
+- Protocol `1.2` is the exact capability set for model status and streamed local responses; `1.1` clients do not implicitly accept it.
 - Protocol versions are exact capabilities; every unsupported version is rejected before state changes.
 
 - V1 is Polish-only.

@@ -5,6 +5,7 @@ import pytest
 
 from moj_asystent_core.protocol import (
     PROTOCOL_VERSION,
+    AssistantResponseDelta,
     AssistantStateChanged,
     ClientHello,
     ProtocolValidationError,
@@ -48,6 +49,18 @@ def test_protocol_round_trips_an_assistant_state_event() -> None:
 
     assert isinstance(event, AssistantStateChanged)
     assert event.payload.state == "listening"
+
+
+def test_protocol_round_trips_a_stream_delta() -> None:
+    event = parse_event(
+        envelope(
+            "assistant.response.delta",
+            {"operation_id": str(uuid4()), "sequence": 0, "text": "Cześć"},
+        )
+    )
+
+    assert isinstance(event, AssistantResponseDelta)
+    assert event.payload.text == "Cześć"
 
 
 @pytest.mark.parametrize("version", ["", "0.9", "2.0", "v1"])

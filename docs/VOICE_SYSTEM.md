@@ -23,7 +23,7 @@ Microphone
 
 ## Milestone 3 implementation
 
-The core now owns a cancellable asyncio audio pipeline. `sounddevice` supplies bounded 16-bit mono PCM frames through a thread-safe ingress; openWakeWord runs only in idle, Silero VAD bounds utterances, faster-whisper is forced to `language="pl"`, and Piper plays a configured `pl_PL` ONNX voice outside the event loop. Until Milestone 5, processing emits the deterministic response `Usłyszałem: … To testowa odpowiedź bez modelu AI.`
+The core owns a cancellable asyncio audio pipeline. `sounddevice` supplies bounded 16-bit mono PCM frames through a thread-safe ingress; openWakeWord runs only in idle, Silero VAD bounds utterances, faster-whisper is forced to `language="pl"`, and Piper plays a configured `pl_PL` ONNX voice outside the event loop. Milestone 5 routes the final Polish transcript through the local conversation provider, streams the full answer to the overlay and gives Piper a bounded two-sentence spoken variant.
 
 Audio bytes and VAD buffers remain in RAM and are cleared after completion, cancellation, failure or shutdown. Provider work is tagged with a generation and operation UUID, so results finishing after cancellation cannot publish events or mutate the authoritative state. Wake processing is suppressed during TTS. Microphone failures retry after a bounded delay, while the shortcut and text overlay remain available.
 

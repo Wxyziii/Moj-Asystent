@@ -13,6 +13,7 @@ from moj_asystent_core.audio import (
     normalize_pcm,
 )
 from moj_asystent_core.audio_providers import ThreadSafeAudioIngress
+from moj_asystent_core.conversation import ConversationReply
 from moj_asystent_core.providers import (
     SpeechToTextRequest,
     SpeechToTextResponse,
@@ -78,6 +79,18 @@ class FakeTts:
 
     async def cancel(self) -> None:
         pass
+
+
+class FakeConversation:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, str, str]] = []
+
+    async def respond(self, operation_id, user_text: str, *, mode: str) -> ConversationReply:
+        self.calls.append((operation_id, user_text, mode))
+        return ConversationReply(
+            text="Pełna odpowiedź zawiera więcej szczegółów dla nakładki.",
+            spoken_text="Krótka odpowiedź głosowa.",
+        )
 
 
 def config(**updates: object) -> AudioConfig:
@@ -198,6 +211,31 @@ async def test_complete_polish_voice_cycle_and_follow_up() -> None:
 
     await pipeline.handle_frame(frame())
     assert runtime.health_payload().assistant_state == "listening"
+    await pipeline.shutdown()
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_voice_cycle_uses_local_conversation_and_short_spoken_variant() -> None:
+    runtime = CoreRuntime()
+    tts = FakeTts()
+    conversation = FakeConversation()
+    pipeline = AudioPipeline(
+        runtime,
+        config(follow_up_timeout_seconds=1),
+        FakeWake(),
+        FakeVad([0.8, 0.1, 0.1]),
+        FakeStt("Opowiedz więcej"),
+        tts,
+        conversation=conversation,
+    )
+    await pipeline.manual_listen()
+    for _ in range(3):
+        await pipeline.handle_frame(frame())
+    await pipeline.wait_current_operation()
+
+    assert conversation.calls[0][1:] == ("Opowiedz więcej", "voice")
+    assert tts.requests[0].text == "Krótka odpowiedź głosowa."
     await pipeline.shutdown()
     await runtime.shutdown()
 

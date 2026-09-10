@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +27,15 @@ from .runtime import CoreRuntime
 from .state import InvalidStateTransition
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from .conversation import ConversationReply
+
+
+class ConversationResponder(Protocol):
+    async def respond(
+        self, operation_id: UUID, user_text: str, *, mode: Literal["voice", "text"]
+    ) -> ConversationReply: ...
 
 
 def _default_piper_voice() -> str | None:
@@ -179,6 +188,7 @@ class AudioPipeline:
         stt: SpeechToTextProvider,
         tts: TextToSpeechProvider,
         source: AudioSource | None = None,
+        conversation: ConversationResponder | None = None,
     ) -> None:
         self._runtime = runtime
         self.config = config
@@ -187,6 +197,7 @@ class AudioPipeline:
         self._stt = stt
         self._tts = tts
         self._source = source
+        self._conversation = conversation
         self._detector = SpeechBoundaryDetector(config)
         self._capture = bytearray()
         self._generation = 0
@@ -339,13 +350,30 @@ class AudioPipeline:
                 return
             self._runtime.publish_transcript(operation_id, response)
             self._runtime.transition("thinking", expected_state="transcribing")
-            answer = f"Usłyszałem: „{response.transcript}”. To testowa odpowiedź bez modelu AI."
-            self._runtime.publish_placeholder_response(operation_id, answer)
+            if self._conversation is None:
+                answer = f"Usłyszałem: „{response.transcript}”."
+                spoken_answer = answer
+                self._runtime.publish_response_started(
+                    operation_id, model="development-fallback", mode="voice"
+                )
+                self._runtime.publish_response_delta(operation_id, 0, answer)
+                self._runtime.publish_response_completed(
+                    operation_id,
+                    answer,
+                    spoken_text=answer,
+                    model="development-fallback",
+                )
+            else:
+                reply = await self._conversation.respond(
+                    operation_id, response.transcript, mode="voice"
+                )
+                answer = reply.text
+                spoken_answer = reply.spoken_text
             if self.config.voice_responses_enabled:
                 self._runtime.transition("speaking", expected_state="thinking")
                 self._playback_active = True
                 try:
-                    await self._tts.speak(TextToSpeechRequest(text=answer, language="pl"))
+                    await self._tts.speak(TextToSpeechRequest(text=spoken_answer, language="pl"))
                 finally:
                     self._playback_active = False
                 if not self._is_current(generation, operation_id):

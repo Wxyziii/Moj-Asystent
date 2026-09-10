@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import Base64Bytes, BaseModel, ConfigDict, Field
+from pydantic import Base64Bytes, BaseModel, ConfigDict, Field, field_validator
 
 from .audio import AudioConfig, AudioPipeline, PcmFrame
 from .audio_providers import (
@@ -25,6 +25,13 @@ from .audio_providers import (
     list_input_devices,
 )
 from .auth import SessionCredential
+from .conversation import LocalConversationService, TextChatController
+from .llm import (
+    DEFAULT_MODEL,
+    DEFAULT_OLLAMA_URL,
+    LanguageModelProvider,
+    OllamaLanguageModelProvider,
+)
 from .local_boundary import LocalHostMiddleware
 from .protocol import (
     PROTOCOL_VERSION,
@@ -53,7 +60,7 @@ ALLOWED_ORIGINS = (
 
 class StrictRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    protocol_version: Literal["1.1"]
+    protocol_version: Literal["1.2"]
 
 
 class BeginOnboardingRequest(StrictRequest):
@@ -90,6 +97,18 @@ class SensitivityRequest(StrictRequest):
     value: float = Field(ge=0.05, le=0.95)
 
 
+class ChatRequest(StrictRequest):
+    text: str = Field(min_length=1, max_length=8_192)
+
+    @field_validator("text")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Message cannot be blank")
+        return normalized
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     host: str = "127.0.0.1"
@@ -100,6 +119,8 @@ class CoreSettings:
     audio: AudioConfig = field(default_factory=AudioConfig)
     audio_enabled: bool = False
     wake_data_root: Path = field(default_factory=default_wake_root)
+    ollama_url: str = DEFAULT_OLLAMA_URL
+    llm_model: str = DEFAULT_MODEL
 
     def __post_init__(self) -> None:
         if not ipaddress.ip_address(self.host).is_loopback:
@@ -126,6 +147,11 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
             }
         )
     wake_provider = OpenWakeWordProvider(config.wake_model_path, config.development_wake_model)
+    provider: LanguageModelProvider = app.state.language_model_provider
+    conversation = LocalConversationService(runtime, provider)
+    chat = TextChatController(runtime, conversation)
+    app.state.conversation = conversation
+    app.state.chat = chat
     audio = AudioPipeline(
         runtime,
         config,
@@ -134,6 +160,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         FasterWhisperPolishProvider(config.stt_model),
         PiperPolishProvider(config.tts_voice_path),
         SoundDeviceMicrophone(config),
+        conversation,
     )
     app.state.audio = audio
 
@@ -149,20 +176,29 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     app.state.onboarding = onboarding
     if app.state.settings.audio_enabled and active is not None:
         await audio.start()
+    await conversation.refresh_status()
     logger.info("core_started", extra={"protocol_version": PROTOCOL_VERSION})
     try:
         yield
     finally:
         await onboarding.shutdown()
+        await chat.shutdown()
         await audio.shutdown()
+        await conversation.close()
         await runtime.shutdown()
         logger.info("core_stopped")
 
 
-def create_app(settings: CoreSettings | None = None) -> FastAPI:
+def create_app(
+    settings: CoreSettings | None = None,
+    language_model_provider: LanguageModelProvider | None = None,
+) -> FastAPI:
     resolved = settings or CoreSettings()
     app = FastAPI(title="Mój Asystent Core", version=PROTOCOL_VERSION, lifespan=lifecycle)
     app.state.settings = resolved
+    app.state.language_model_provider = language_model_provider or OllamaLanguageModelProvider(
+        base_url=resolved.ollama_url, model=resolved.llm_model
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(ALLOWED_ORIGINS),
@@ -199,12 +235,34 @@ def create_app(settings: CoreSettings | None = None) -> FastAPI:
 
     @app.post("/audio/listen")
     async def listen(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:
+        await app.state.chat.cancel()
         await app.state.audio.manual_listen()
         return {"status": "listening"}
 
     @app.post("/audio/cancel")
     async def cancel(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:
         await app.state.audio.cancel()
+        return {"status": "idle"}
+
+    @app.get("/model/status")
+    async def model_status(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        status = await app.state.conversation.refresh_status()
+        return status.model_dump()
+
+    @app.post("/chat")
+    async def chat(
+        request: ChatRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        await app.state.audio.cancel()
+        operation_id = await app.state.chat.start(request.text)
+        return {"status": "accepted", "operation_id": operation_id}
+
+    @app.post("/chat/cancel")
+    async def cancel_chat(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:
+        await app.state.chat.cancel()
         return {"status": "idle"}
 
     @app.get("/audio/devices")

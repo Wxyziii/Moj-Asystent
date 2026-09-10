@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { connectToCore, sendAudioCommand } from "./coreClient";
+import { connectToCore, sendAudioCommand, sendChatMessage } from "./coreClient";
 import type { ClientHello, AssistantState } from "@moj-asystent/protocol";
 
 const TOKEN = "a".repeat(64);
@@ -40,7 +40,7 @@ class FakeSocket extends EventTarget {
 const health = {
   service: "core",
   status: "ready",
-  protocol_version: "1.1",
+  protocol_version: "1.2",
   assistant_state: "idle",
 };
 const response = () => ({
@@ -52,7 +52,7 @@ const wire = (
   payload: unknown,
   correlation_id: string | null = null,
 ) => ({
-  protocol_version: "1.1",
+  protocol_version: "1.2",
   event_id: crypto.randomUUID(),
   occurred_at: new Date().toISOString(),
   correlation_id,
@@ -236,6 +236,59 @@ it("authenticates HTTP and WebSocket traffic and delivers sensitive content afte
   expect(content).toHaveBeenCalledOnce();
 });
 
+it("delivers one validated, ordered local-model stream", async () => {
+  const content = vi.fn();
+  stop = connectToCore(vi.fn(), vi.fn(), TOKEN, content);
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = FakeSocket.instances[0];
+  synchronize(socket);
+  const operation = crypto.randomUUID();
+  socket.frame(
+    wire(
+      "assistant.response.started",
+      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "assistant.response.delta",
+      { operation_id: operation, sequence: 0, text: "Cześć" },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "assistant.response.completed",
+      {
+        operation_id: operation,
+        text: "Cześć",
+        spoken_text: null,
+        kind: "local_model",
+        model: "qwen3.5:4b",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  expect(content).toHaveBeenCalledTimes(3);
+});
+
+it("rejects an out-of-order model stream and reconnects", async () => {
+  const status = vi.fn();
+  stop = connectToCore(status, vi.fn(), TOKEN);
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = FakeSocket.instances[0];
+  synchronize(socket);
+  socket.frame(
+    wire(
+      "assistant.response.delta",
+      { operation_id: crypto.randomUUID(), sequence: 1, text: "późno" },
+      socket.hello.event_id,
+    ),
+  );
+  expect(status).toHaveBeenLastCalledWith("disconnected");
+});
+
 it("authenticates audio controls without putting credentials in the URL", async () => {
   await sendAudioCommand("listen", TOKEN);
   expect(request).toHaveBeenLastCalledWith(
@@ -246,6 +299,27 @@ it("authenticates audio controls without putting credentials in the URL", async 
     }),
   );
   expect(request.mock.calls.at(-1)?.[0]).not.toContain(TOKEN);
+});
+
+it("sends trimmed typed chat with the exact protocol version", async () => {
+  const operation = crypto.randomUUID();
+  request.mockResolvedValue({
+    ok: true,
+    text: async () =>
+      JSON.stringify({ status: "accepted", operation_id: operation }),
+  });
+  await expect(sendChatMessage("  Cześć  ", TOKEN)).resolves.toBe(operation);
+  expect(request).toHaveBeenLastCalledWith(
+    "http://127.0.0.1:8765/chat",
+    expect.objectContaining({
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ protocol_version: "1.2", text: "Cześć" }),
+    }),
+  );
 });
 
 it.each([
@@ -323,7 +397,7 @@ it("detects a silent core and refreshes the liveness deadline on heartbeat", asy
 it("validates HTTP protocol compatibility before opening a socket", async () => {
   request.mockResolvedValue({
     ok: true,
-    text: async () => JSON.stringify({ ...health, protocol_version: "1.2" }),
+    text: async () => JSON.stringify({ ...health, protocol_version: "1.3" }),
   });
   const status = vi.fn();
   stop = connect(status, vi.fn());

@@ -25,6 +25,8 @@ export default function App() {
     stateSource,
     messages,
     toggleListening,
+    sendMessage,
+    modelStatus,
     credential,
   } = useAssistantUi();
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -117,6 +119,8 @@ export default function App() {
         stateSource={stateSource}
         messages={messages}
         onToggleListening={() => void toggleListening()}
+        onSendMessage={sendMessage}
+        modelStatus={modelStatus}
       />
     );
   return (
