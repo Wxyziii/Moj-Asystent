@@ -36,6 +36,7 @@ import {
   listMicrophones,
   type MicrophoneChoice,
 } from "../lib/pcmRecorder";
+import { findNextMissingRecordingIndex } from "./recordingNavigation";
 
 type Stage =
   | "welcome"
@@ -189,9 +190,18 @@ export function WakeOnboarding({
       );
       setQuality(result);
       if (result.accepted) {
+        const acceptedStepIds = [...session.accepted_step_ids, step.id];
+        const nextIndex = findNextMissingRecordingIndex(
+          session.curriculum,
+          acceptedStepIds,
+          recordingIndex + 1,
+        );
+        setSession({ ...session, accepted_step_ids: acceptedStepIds });
         window.setTimeout(() => {
           setQuality(undefined);
-          setRecordingIndex((index) => index + 1);
+          setRecordingIndex(
+            nextIndex < 0 ? session.curriculum.length : nextIndex,
+          );
         }, 650);
       }
     } catch (reason) {
