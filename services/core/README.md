@@ -12,6 +12,11 @@ The service exposes `GET /health` and `/ws`. WebSocket clients must send a
 protocol-v1 `client.hello` before receiving health and state synchronization.
 Invalid origin, size, schema and protocol-version inputs are rejected.
 
+Assistant state is owned by one asyncio event loop and published through
+bounded per-client queues. New and reconnected clients receive a correlated,
+authoritative snapshot. Slow clients are disconnected so they cannot block the
+core. Shutdown cancels active WebSocket session work before lifecycle teardown.
+
 No model, audio, microphone, screen, tool or persistence implementation is
 included at this stage.
 
@@ -38,26 +43,14 @@ included at this stage.
 ```text
 services/core/
   src/
-    assistant_core/
-      api/
-      audio/
-        wakeword/
-        vad/
-        stt/
-        tts/
-      ai/
-        providers/
-        router/
-        prompts/
-      context/
-        windows/
-        screen/
-        telemetry/
-      tools/
-      permissions/
-      memory/
-      watchers/
-      state/
+    moj_asystent_core/
+      api.py
+      local_boundary.py
+      main.py
+      protocol.py
+      providers.py
+      runtime.py
+      state.py
 ```
 
 See `docs/ARCHITECTURE.md` and `docs/IMPLEMENTATION_PLAN.md`.

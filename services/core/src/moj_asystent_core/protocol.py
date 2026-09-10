@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 PROTOCOL_VERSION = "1.0"
 AssistantState = Literal[
@@ -24,9 +25,19 @@ AssistantState = Literal[
 class ProtocolValidationError(ValueError):
     """Raised when untrusted wire data is not a supported protocol-v1 event."""
 
+    def __init__(
+        self,
+        message: str,
+        code: Literal[
+            "invalid_message", "unsupported_protocol", "message_too_large"
+        ] = "invalid_message",
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class EventPayload(StrictModel):
@@ -39,9 +50,9 @@ class ClientHelloPayload(EventPayload):
 
 
 class SystemHealthPayload(EventPayload):
-    service: Literal["core"] = "core"
+    service: Literal["core"]
     status: Literal["ready", "stopping"]
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0"]
     assistant_state: AssistantState
 
 
@@ -56,10 +67,41 @@ class SystemErrorPayload(EventPayload):
 
 
 class EventBase(StrictModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0"]
     event_id: UUID
     occurred_at: datetime
-    correlation_id: UUID | None = None
+    correlation_id: UUID | None
+
+    @field_validator("event_id", "correlation_id", mode="before")
+    @classmethod
+    def validate_uuid(cls, value: object) -> object:
+        if (
+            value is not None
+            and not isinstance(value, UUID)
+            and (
+                not isinstance(value, str)
+                or not re.fullmatch(
+                    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                    value,
+                )
+            )
+        ):
+            raise ValueError("Expected a hyphenated UUID")
+        return value
+
+    @field_validator("occurred_at", mode="before")
+    @classmethod
+    def validate_timestamp(cls, value: object) -> object:
+        if isinstance(value, datetime):
+            offset = value.utcoffset()
+            if offset is None or offset.total_seconds() != 0:
+                raise ValueError("Expected UTC time")
+            return value
+        if not isinstance(value, str) or not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|\+00:00)", value
+        ):
+            raise ValueError("Expected an RFC3339 UTC timestamp")
+        return value
 
 
 class ClientHello(EventBase):
@@ -97,16 +139,17 @@ def parse_event(value: object) -> ProtocolEvent:
     version = value.get("protocol_version")
     if version != PROTOCOL_VERSION:
         raise ProtocolValidationError(
-            f"Unsupported protocol_version {version!r}; expected {PROTOCOL_VERSION!r}"
+            "Unsupported protocol_version; expected 1.0",
+            "unsupported_protocol",
         )
     event_type = value.get("type")
     model = _EVENT_MODELS.get(event_type) if isinstance(event_type, str) else None
     if model is None:
-        raise ProtocolValidationError(f"Unsupported event type {event_type!r}")
+        raise ProtocolValidationError("Unsupported event type")
     try:
         return model.model_validate(value)
     except ValidationError as error:
-        raise ProtocolValidationError(error.json(include_url=False)) from error
+        raise ProtocolValidationError("Invalid event fields") from error
 
 
 def new_event(

@@ -4,7 +4,9 @@
 
 Decision: desktop and core exchange explicit protocol-v1 envelopes over a localhost-only HTTP/WebSocket boundary. Every event contains a protocol version, event ID, UTC timestamp and nullable correlation ID. Unknown event types, extra fields and incompatible versions are rejected before they reach assistant state handling.
 
-Compatibility rule: additive, backward-compatible changes may increment the minor protocol version after both consumers support them. Any breaking schema or behavior change requires a new major version and is rejected by older clients.
+Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.0` client therefore rejects `1.1`. Additive, backward-compatible changes may introduce `1.1` only after both consumers explicitly list and validate it; during migration the core may support both exact versions. Any breaking schema or behavior change requires a new major version.
+
+Connection rule: the desktop proves liveness through a bounded health check and a correlated WebSocket handshake, then reconnects with exponential backoff capped at 30 seconds. The core owns the authoritative state on one event loop and correlates every outbound event to that session's hello event. Event IDs are unique within a stream and duplicate IDs are rejected; events from superseded desktop connection attempts are ignored.
 
 Reason: it allows the Tauri UI and Python core to evolve independently without treating local payloads as trusted or silently changing assistant behavior.
 

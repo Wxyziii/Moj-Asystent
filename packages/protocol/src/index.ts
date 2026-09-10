@@ -61,32 +61,126 @@ export function createClientHello(clientId: string): ClientHello {
 }
 
 export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
-  if (!value || typeof value !== "object") return null;
-  const event = value as Partial<ProtocolEvent>;
-  if (
-    event.protocol_version !== PROTOCOL_VERSION ||
-    typeof event.type !== "string" ||
-    !event.payload ||
-    typeof event.payload !== "object"
-  )
-    return null;
-  if (event.type === "system.health") {
-    const payload = event.payload as SystemHealth["payload"];
-    return payload.service === "core" &&
-      (payload.status === "ready" || payload.status === "stopping") &&
-      assistantStates.includes(payload.assistant_state)
-      ? (event as SystemHealth)
-      : null;
+  if (!isEnvelope(value)) return null;
+  const payload = value.payload;
+  switch (value.type) {
+    case "client.hello":
+      return exactObject(payload, ["client_id", "protocol_version"]) &&
+        typeof payload.client_id === "string" &&
+        payload.client_id.length >= 1 &&
+        payload.client_id.length <= 128 &&
+        payload.protocol_version === PROTOCOL_VERSION
+        ? (value as unknown as ClientHello)
+        : null;
+    case "system.health":
+      return parseHealth(payload) ? (value as unknown as SystemHealth) : null;
+    case "assistant.state.changed":
+      return exactObject(payload, ["previous_state", "state"]) &&
+        isAssistantState(payload.state) &&
+        (payload.previous_state === null ||
+          isAssistantState(payload.previous_state))
+        ? (value as unknown as AssistantStateChanged)
+        : null;
+    case "system.error":
+      return exactObject(payload, ["code", "message"]) &&
+        errorCodes.includes(payload.code as (typeof errorCodes)[number]) &&
+        typeof payload.message === "string" &&
+        payload.message.length >= 1 &&
+        payload.message.length <= 256
+        ? (value as unknown as SystemError)
+        : null;
+    default:
+      return null;
   }
-  if (event.type === "assistant.state.changed") {
-    const payload = event.payload as AssistantStateChanged["payload"];
-    return assistantStates.includes(payload.state) &&
-      (payload.previous_state === null ||
-        assistantStates.includes(payload.previous_state))
-      ? (event as AssistantStateChanged)
-      : null;
-  }
-  if (event.type === "system.error") return event as SystemError;
-  if (event.type === "client.hello") return event as ClientHello;
-  return null;
+}
+
+export function parseHealth(value: unknown): SystemHealth["payload"] | null {
+  return exactObject(value, [
+    "service",
+    "status",
+    "protocol_version",
+    "assistant_state",
+  ]) &&
+    value.service === "core" &&
+    (value.status === "ready" || value.status === "stopping") &&
+    value.protocol_version === PROTOCOL_VERSION &&
+    isAssistantState(value.assistant_state)
+    ? (value as unknown as SystemHealth["payload"])
+    : null;
+}
+
+const uuidPattern =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const utcPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|\+00:00)$/;
+const errorCodes = [
+  "invalid_message",
+  "unsupported_protocol",
+  "invalid_origin",
+  "message_too_large",
+] as const;
+
+function exactObject(
+  value: unknown,
+  keys: readonly string[],
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key))
+  );
+}
+
+function isAssistantState(value: unknown): value is AssistantState {
+  return (
+    typeof value === "string" &&
+    assistantStates.includes(value as AssistantState)
+  );
+}
+
+function isUtcTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = utcPattern.exec(value);
+  if (!match) return false;
+  const parsed = new Date(value);
+  return (
+    !Number.isNaN(parsed.valueOf()) &&
+    parsed.getUTCFullYear() === Number(match[1]) &&
+    parsed.getUTCMonth() + 1 === Number(match[2]) &&
+    parsed.getUTCDate() === Number(match[3]) &&
+    parsed.getUTCHours() === Number(match[4]) &&
+    parsed.getUTCMinutes() === Number(match[5]) &&
+    parsed.getUTCSeconds() === Number(match[6])
+  );
+}
+
+function isEnvelope(
+  value: unknown,
+): value is Record<string, unknown> & {
+  type: string;
+  payload: Record<string, unknown>;
+} {
+  return (
+    exactObject(value, [
+      "protocol_version",
+      "event_id",
+      "occurred_at",
+      "correlation_id",
+      "type",
+      "payload",
+    ]) &&
+    value.protocol_version === PROTOCOL_VERSION &&
+    typeof value.event_id === "string" &&
+    uuidPattern.test(value.event_id) &&
+    isUtcTimestamp(value.occurred_at) &&
+    (value.correlation_id === null ||
+      (typeof value.correlation_id === "string" &&
+        uuidPattern.test(value.correlation_id))) &&
+    typeof value.type === "string" &&
+    typeof value.payload === "object" &&
+    value.payload !== null &&
+    !Array.isArray(value.payload)
+  );
 }

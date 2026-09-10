@@ -1,29 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { PROTOCOL_VERSION, parseProtocolEvent } from "./index";
+import Ajv2020 from "ajv/dist/2020";
+import addFormats from "ajv-formats";
+import cases from "../fixtures/contract-cases.json";
+import schema from "../schema/protocol-v1.json";
+import { createClientHello, parseProtocolEvent } from "./index";
 
-describe("protocol-v1 parser", () => {
-  it("accepts a core health event and rejects an unknown protocol", () => {
-    expect(
-      parseProtocolEvent({
-        protocol_version: PROTOCOL_VERSION,
-        event_id: "id",
-        occurred_at: "2026-09-09T20:00:00Z",
-        correlation_id: null,
-        type: "system.health",
-        payload: {
-          service: "core",
-          status: "ready",
-          protocol_version: PROTOCOL_VERSION,
-          assistant_state: "idle",
-        },
-      })?.type,
-    ).toBe("system.health");
-    expect(
-      parseProtocolEvent({
-        protocol_version: "2.0",
-        type: "system.health",
-        payload: {},
-      }),
-    ).toBeNull();
+describe("shared protocol acceptance corpus", () => {
+  const ajv = new Ajv2020({ strict: true });
+  addFormats(ajv);
+  const validateSchema = ajv.compile(schema);
+
+  it.each(cases)("$name", ({ value, valid }) => {
+    expect(validateSchema(value)).toBe(valid);
+    expect(parseProtocolEvent(value) !== null).toBe(valid);
+  });
+  it("serializes the desktop hello to the shared contract", () => {
+    const hello = createClientHello("desktop");
+    expect(parseProtocolEvent(JSON.parse(JSON.stringify(hello)))).toEqual(
+      hello,
+    );
   });
 });

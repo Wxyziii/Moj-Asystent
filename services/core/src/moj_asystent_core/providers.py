@@ -10,7 +10,7 @@ class ProviderUnavailableError(RuntimeError):
 
 
 class ProviderModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class LanguageModelRequest(ProviderModel):
@@ -69,29 +69,17 @@ class MockLanguageModelProvider:
     async def generate(self, request: LanguageModelRequest) -> LanguageModelResponse:
         raise ProviderUnavailableError("LLM provider is not available in Milestone 2")
 
-    async def execute_for_test(self) -> None:
-        await self.generate(LanguageModelRequest(prompt="test"))
-
 
 class MockSpeechToTextProvider:
     async def transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse:
         raise ProviderUnavailableError("STT provider is not available in Milestone 2")
-
-    async def execute_for_test(self) -> None:
-        await self.transcribe(SpeechToTextRequest(audio_reference="in-memory"))
 
 
 class MockTextToSpeechProvider:
     async def synthesize(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
         raise ProviderUnavailableError("TTS provider is not available in Milestone 2")
 
-    async def execute_for_test(self) -> None:
-        await self.synthesize(TextToSpeechRequest(text="test"))
-
 
 class MockWakeWordProvider:
     async def detect(self, request: WakeWordRequest) -> WakeWordResponse:
         raise ProviderUnavailableError("Wake-word provider is not available in Milestone 2")
-
-    async def execute_for_test(self) -> None:
-        await self.detect(WakeWordRequest(audio_reference="in-memory"))

@@ -4,7 +4,7 @@
     "tagline": "Polski, lokalny asystent AI dla Windows",
     "stage": "Core service & protocol",
     "status": "Milestone 2 complete — local FastAPI core and typed desktop protocol",
-    "updated": "2026-09-09"
+    "updated": "2026-09-10"
   },
   "principles": [
     "Polish-only V1",
@@ -18,25 +18,98 @@
     { "label": "Desktop", "value": "Tauri 2 + React + TypeScript" },
     { "label": "Core", "value": "Python 3.12 + FastAPI + WebSocket" },
     { "label": "Main AI", "value": "Qwen3.5 4B via Ollama" },
-    { "label": "Voice", "value": "openWakeWord · Silero · faster-whisper · Piper" },
+    {
+      "label": "Voice",
+      "value": "openWakeWord · Silero · faster-whisper · Piper"
+    },
     { "label": "Context", "value": "Windows UI Automation + selective vision" },
     { "label": "Memory", "value": "SQLite" }
   ],
   "milestones": [
-    { "id": 0, "name": "Foundation", "status": "done", "description": "Architecture, docs, Codex instructions and development site." },
-    { "id": 1, "name": "Desktop shell", "status": "done", "description": "Tauri overlay, tray, shortcut and simulated assistant UI states." },
-    { "id": 2, "name": "Core service", "status": "done", "description": "Local FastAPI core, versioned WebSocket protocol and assistant state machine." },
-    { "id": 3, "name": "Polish voice", "status": "planned", "description": "Wake word, VAD, forced-Polish STT, TTS and follow-up mode." },
-    { "id": 4, "name": "Custom wake name", "status": "planned", "description": "Guided name training, hard negatives, validation and retraining." },
-    { "id": 5, "name": "Local AI", "status": "planned", "description": "Qwen3.5 4B, Polish prompt, streaming and model lifecycle." },
-    { "id": 6, "name": "Tools & permissions", "status": "planned", "description": "Typed Windows tools, validation and confirmation cards." },
-    { "id": 7, "name": "Screen context", "status": "planned", "description": "Active window, UI Automation, screenshots and region selection." },
-    { "id": 8, "name": "Vision & diagnostics", "status": "planned", "description": "Multimodal screen understanding plus system/GPU telemetry." },
-    { "id": 9, "name": "Memory & routines", "status": "planned", "description": "SQLite memory, aliases, preferences and reusable routines." },
-    { "id": 10, "name": "Watchers", "status": "planned", "description": "Event-driven proactive monitoring and notifications." },
-    { "id": 11, "name": "Deep model routing", "status": "planned", "description": "Quality tier and optional CPU/GPU hybrid reasoning." }
+    {
+      "id": 0,
+      "name": "Foundation",
+      "status": "done",
+      "description": "Architecture, docs, Codex instructions and development site."
+    },
+    {
+      "id": 1,
+      "name": "Desktop shell",
+      "status": "done",
+      "description": "Tauri overlay, tray, shortcut and simulated assistant UI states."
+    },
+    {
+      "id": 2,
+      "name": "Core service",
+      "status": "done",
+      "description": "Local FastAPI core, versioned WebSocket protocol and assistant state machine."
+    },
+    {
+      "id": 3,
+      "name": "Polish voice",
+      "status": "planned",
+      "description": "Wake word, VAD, forced-Polish STT, TTS and follow-up mode."
+    },
+    {
+      "id": 4,
+      "name": "Custom wake name",
+      "status": "planned",
+      "description": "Guided name training, hard negatives, validation and retraining."
+    },
+    {
+      "id": 5,
+      "name": "Local AI",
+      "status": "planned",
+      "description": "Qwen3.5 4B, Polish prompt, streaming and model lifecycle."
+    },
+    {
+      "id": 6,
+      "name": "Tools & permissions",
+      "status": "planned",
+      "description": "Typed Windows tools, validation and confirmation cards."
+    },
+    {
+      "id": 7,
+      "name": "Screen context",
+      "status": "planned",
+      "description": "Active window, UI Automation, screenshots and region selection."
+    },
+    {
+      "id": 8,
+      "name": "Vision & diagnostics",
+      "status": "planned",
+      "description": "Multimodal screen understanding plus system/GPU telemetry."
+    },
+    {
+      "id": 9,
+      "name": "Memory & routines",
+      "status": "planned",
+      "description": "SQLite memory, aliases, preferences and reusable routines."
+    },
+    {
+      "id": 10,
+      "name": "Watchers",
+      "status": "planned",
+      "description": "Event-driven proactive monitoring and notifications."
+    },
+    {
+      "id": 11,
+      "name": "Deep model routing",
+      "status": "planned",
+      "description": "Quality tier and optional CPU/GPU hybrid reasoning."
+    }
   ],
   "changelog": [
+    {
+      "date": "2026-09-10",
+      "title": "Milestone 2 architecture review",
+      "items": [
+        "Added bounded reconnect and heartbeat handling for late starts and core restarts.",
+        "Added correlated state snapshots and stale-session protection.",
+        "Hardened localhost, malformed-message and multi-client behavior.",
+        "Unified JSON Schema, Python and TypeScript validation with a shared contract corpus."
+      ]
+    },
     {
       "date": "2026-09-09",
       "title": "Milestone 2: local core and protocol",

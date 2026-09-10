@@ -1,17 +1,284 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moj-asystent.local/protocol/v1",
-  "title": "Mój Asystent protocol v1",
-  "description": "Source contract for local desktop-to-core events. Both implementations reject unknown fields.",
-  "type": "object",
-  "required": ["protocol_version", "event_id", "occurred_at", "correlation_id", "type", "payload"],
-  "properties": {
-    "protocol_version": { "const": "1.0" },
-    "event_id": { "type": "string", "format": "uuid" },
-    "occurred_at": { "type": "string", "format": "date-time" },
-    "correlation_id": { "type": ["string", "null"], "format": "uuid" },
-    "type": { "enum": ["client.hello", "system.health", "assistant.state.changed", "system.error"] },
-    "payload": { "type": "object" }
+  "title": "Mój Asystent protocol 1.0",
+  "$defs": {
+    "health": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "const": "core"
+        },
+        "status": {
+          "enum": ["ready", "stopping"]
+        },
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "assistant_state": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "wake_detected",
+            "listening",
+            "transcribing",
+            "thinking",
+            "speaking",
+            "follow_up",
+            "error"
+          ]
+        }
+      },
+      "required": ["service", "status", "protocol_version", "assistant_state"],
+      "additionalProperties": false
+    }
   },
-  "additionalProperties": false
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "const": "client.hello"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "client_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "protocol_version": {
+              "const": "1.0"
+            }
+          },
+          "required": ["client_id", "protocol_version"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "event_id",
+        "occurred_at",
+        "correlation_id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "const": "system.health"
+        },
+        "payload": {
+          "$ref": "#/$defs/health"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "event_id",
+        "occurred_at",
+        "correlation_id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "const": "assistant.state.changed"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "previous_state": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "wake_detected",
+                    "listening",
+                    "transcribing",
+                    "thinking",
+                    "speaking",
+                    "follow_up",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "wake_detected",
+                "listening",
+                "transcribing",
+                "thinking",
+                "speaking",
+                "follow_up",
+                "error"
+              ]
+            }
+          },
+          "required": ["previous_state", "state"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "event_id",
+        "occurred_at",
+        "correlation_id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "const": "system.error"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "enum": [
+                "invalid_message",
+                "unsupported_protocol",
+                "invalid_origin",
+                "message_too_large"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "event_id",
+        "occurred_at",
+        "correlation_id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    }
+  ]
 }

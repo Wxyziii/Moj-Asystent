@@ -6,6 +6,18 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 2 architecture hardening: bounded desktop reconnect backoff, correlated session snapshots, heartbeat liveness checks and stale-session suppression.
+- Single-event-loop core runtime with ordered bounded subscriber queues, deterministic multi-client state publication and clean cancellation during shutdown.
+- One shared JSON Schema acceptance corpus exercised by JSON Schema, Python and TypeScript validators, plus real Uvicorn restart/shutdown integration tests.
+
+### Fixed
+
+- Desktop now recovers when the core starts late or restarts while the overlay remains open.
+- Health requests now allow only known desktop origins, while HTTP and WebSocket Host headers remain restricted to loopback names.
+- Binary, oversized, malformed, duplicate, out-of-order and incorrectly correlated protocol messages now fail closed.
+- Protocol `1.0` version handling and documentation now consistently reject `1.1` until explicit support is implemented.
+- Updated the frontend test runner to a patched release after the dependency audit identified vulnerable development-server code.
+
 - Milestone 2 local assistant core under `services/core`, using Python 3.12, FastAPI and a localhost-only HTTP/WebSocket boundary.
 - Protocol v1 schemas and typed Python/TypeScript message contracts for health, handshake, assistant-state and error events.
 - Desktop health/handshake client with clear Polish connected, connecting and disconnected states while retaining UI simulation controls.
@@ -36,7 +48,7 @@ All notable project changes are tracked here.
 
 ### Decisions
 
-- Protocol v1 uses a major/minor version envelope and rejects incompatible major versions before state changes.
+- Protocol versions are exact capabilities; every unsupported version is rejected before state changes.
 
 - V1 is Polish-only.
 - Local processing is the default.

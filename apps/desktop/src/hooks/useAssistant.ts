@@ -21,15 +21,7 @@ export function useAssistantUi() {
     window.localStorage.setItem("moj-asystent.overlay-mode", overlayMode);
   }, [overlayMode]);
 
-  useEffect(
-    () =>
-      connectToCore(setCoreStatus, (nextState) => {
-        setAssistantState((currentState) =>
-          canTransition(currentState, nextState) ? nextState : currentState,
-        );
-      }),
-    [],
-  );
+  useEffect(() => connectToCore(setCoreStatus, setAssistantState), []);
 
   const transitionTo = useCallback((nextState: AssistantState) => {
     setAssistantState((currentState) =>

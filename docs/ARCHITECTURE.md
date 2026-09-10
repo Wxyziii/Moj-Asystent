@@ -228,6 +228,20 @@ The desktop app owns lifecycle/startup UX; the core owns assistant behavior.
 
 ## Communication protocol
 
+The HTTP health response is validated before the desktop opens a WebSocket. A
+WebSocket session begins with `client.hello`; the core correlates its health
+response and authoritative state snapshot to that hello event. The desktop
+becomes connected only after both messages validate. It retries failed or
+closed sessions with bounded exponential backoff and ignores callbacks from
+superseded sessions. Every server event in the session carries the hello event
+ID as its correlation ID, so an event from an older session cannot be accepted
+by a replacement connection.
+
+The core is the sole owner of assistant state. It mutates and publishes state
+on one asyncio event loop. Per-client queues are bounded; a client that cannot
+keep up is disconnected and must reconnect for a fresh snapshot. Shutdown
+cancels active session tasks before lifecycle teardown completes.
+
 Use a shared schema package for messages such as:
 
 - `assistant.state.changed`

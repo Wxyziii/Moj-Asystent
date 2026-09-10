@@ -32,6 +32,10 @@ current v1 events: `client.hello`, `system.health`,
 `assistant.state.changed` and `system.error`.
 
 Every envelope includes `protocol_version`, `event_id`, `occurred_at` and a
-nullable `correlation_id`. Unknown fields, event types and incompatible
-versions are rejected. Additive changes require a supported minor version;
-breaking changes require a new major version.
+nullable `correlation_id`. Unknown fields, event types and unsupported versions
+are rejected by the shared JSON Schema, Python models and TypeScript validator.
+
+Versions are exact capabilities. A `1.0` client rejects `1.1`; it accepts a new
+minor version only after that version is explicitly implemented and validated.
+During a migration, the core may advertise support for multiple exact versions.
+Breaking changes require a new major version.

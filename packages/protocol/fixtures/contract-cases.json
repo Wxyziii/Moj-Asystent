@@ -1,0 +1,800 @@
+[
+  {
+    "name": "valid client.hello",
+    "valid": true,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "valid system.health",
+    "valid": true,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "valid assistant.state.changed",
+    "valid": true,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "valid system.error",
+    "valid": true,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "client.hello missing protocol_version",
+    "valid": false,
+    "value": {
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "client.hello missing event_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "client.hello missing occurred_at",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "client.hello missing correlation_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "client.hello missing type",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "client.hello missing payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello"
+    }
+  },
+  {
+    "name": "client.hello missing payload.client_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "client.hello missing payload.protocol_version",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop"
+      }
+    }
+  },
+  {
+    "name": "client.hello extra payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "system.health missing protocol_version",
+    "valid": false,
+    "value": {
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing event_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing occurred_at",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing correlation_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing type",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health"
+    }
+  },
+  {
+    "name": "system.health missing payload.service",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing payload.status",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "protocol_version": "1.0",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing payload.protocol_version",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "system.health missing payload.assistant_state",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "system.health extra payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.0",
+        "assistant_state": "idle",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing protocol_version",
+    "valid": false,
+    "value": {
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing event_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing occurred_at",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing correlation_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing type",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "payload": {
+        "previous_state": null,
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed"
+    }
+  },
+  {
+    "name": "assistant.state.changed missing payload.previous_state",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "state": "thinking"
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed missing payload.state",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null
+      }
+    }
+  },
+  {
+    "name": "assistant.state.changed extra payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "thinking",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "system.error missing protocol_version",
+    "valid": false,
+    "value": {
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "system.error missing event_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "system.error missing occurred_at",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "system.error missing correlation_id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "system.error missing type",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "system.error missing payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error"
+    }
+  },
+  {
+    "name": "system.error missing payload.code",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "message": "Nieprawidłowa wiadomość."
+      }
+    }
+  },
+  {
+    "name": "system.error missing payload.message",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message"
+      }
+    }
+  },
+  {
+    "name": "system.error extra payload",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "invalid_message",
+        "message": "Nieprawidłowa wiadomość.",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "minor",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.1",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "major",
+    "valid": false,
+    "value": {
+      "protocol_version": "2.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "id",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "id",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "compact_uuid",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b0c544d239a8a74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "date",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": 0,
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "naive",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "invalid_date",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-02-30T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "extra",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      },
+      "extra": true
+    }
+  },
+  {
+    "name": "bad_correlation",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": 22,
+      "type": "client.hello",
+      "payload": {
+        "client_id": "desktop",
+        "protocol_version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "nested version",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.health",
+      "payload": {
+        "service": "core",
+        "status": "ready",
+        "protocol_version": "1.1",
+        "assistant_state": "idle"
+      }
+    }
+  },
+  {
+    "name": "unknown state",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "assistant.state.changed",
+      "payload": {
+        "previous_state": null,
+        "state": "bogus"
+      }
+    }
+  },
+  {
+    "name": "unknown code",
+    "valid": false,
+    "value": {
+      "protocol_version": "1.0",
+      "event_id": "c1f8377b-0c54-4d23-9a8a-74f9220cb139",
+      "occurred_at": "2026-09-09T20:00:00Z",
+      "correlation_id": null,
+      "type": "system.error",
+      "payload": {
+        "code": "execute",
+        "message": "bad"
+      }
+    }
+  },
+  {
+    "name": "array",
+    "valid": false,
+    "value": []
+  }
+]

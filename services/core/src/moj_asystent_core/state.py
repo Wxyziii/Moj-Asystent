@@ -21,6 +21,8 @@ _TRANSITIONS: dict[AssistantState, frozenset[AssistantState]] = {
 
 class AssistantStateMachine:
     def __init__(self, initial_state: AssistantState = "idle") -> None:
+        if initial_state not in _TRANSITIONS:
+            raise InvalidStateTransition("Unknown initial assistant state")
         self._state = initial_state
 
     @property
@@ -35,8 +37,9 @@ class AssistantStateMachine:
                 f"Invalid assistant state transition: {self._state} -> {target}"
             )
         previous_state = self._state
+        event = _state_event(previous_state, target)
         self._state = target
-        return _state_event(previous_state, target)
+        return event
 
     def synchronize(self) -> AssistantStateChanged:
         return _state_event(None, self._state)
