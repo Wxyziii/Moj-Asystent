@@ -5,6 +5,7 @@ import type {
 } from "../domain/assistant";
 import { StatusOrb } from "./StatusOrb";
 import { Waveform } from "./Waveform";
+import type { CoreConnectionStatus } from "../lib/coreClient";
 
 interface CompactOverlayProps {
   state: AssistantState;
@@ -12,6 +13,8 @@ interface CompactOverlayProps {
   onExpand: () => void;
   onSettings: () => void;
   onClose: () => void;
+  stateSource: "core" | "simulation";
+  coreStatus: CoreConnectionStatus;
 }
 
 export function CompactOverlay({
@@ -20,6 +23,8 @@ export function CompactOverlay({
   onExpand,
   onSettings,
   onClose,
+  stateSource,
+  coreStatus,
 }: CompactOverlayProps) {
   const listening =
     state === "listening" || state === "wake_detected" || state === "follow_up";
@@ -58,7 +63,10 @@ export function CompactOverlay({
         <div>
           <p>{definition.detail}</p>
           <span className="state-caption">
-            Tryb demonstracyjny · Ctrl + Shift + Spacja
+            {stateSource === "core" && coreStatus === "connected"
+              ? "Stan z lokalnego rdzenia"
+              : "Podgląd demonstracyjny"}{" "}
+            · Ctrl + Shift + Spacja
           </span>
         </div>
         <Waveform active={listening} />

@@ -2,13 +2,22 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from moj_asystent_core.api import create_app
+from moj_asystent_core.api import CoreSettings, create_app
+from moj_asystent_core.auth import SessionCredential
 from moj_asystent_core.protocol import PROTOCOL_VERSION
+
+TOKEN = "A" * 43
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+PROTOCOLS = ["moj-asystent.v1", f"credential.{TOKEN}"]
+
+
+def app():
+    return create_app(CoreSettings(credential=SessionCredential.from_value(TOKEN)))
 
 
 def test_health_endpoint_reports_a_ready_versioned_local_core() -> None:
-    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
-        response = client.get("/health")
+    with TestClient(app(), base_url="http://127.0.0.1") as client:
+        response = client.get("/health", headers=AUTH)
 
     assert response.status_code == 200
     assert response.json() == {
@@ -21,8 +30,10 @@ def test_health_endpoint_reports_a_ready_versioned_local_core() -> None:
 
 def test_websocket_handshake_synchronizes_health_and_initial_state() -> None:
     with (
-        TestClient(create_app(), base_url="http://127.0.0.1") as client,
-        client.websocket_connect("/ws", headers={"host": "127.0.0.1"}) as socket,
+        TestClient(app(), base_url="http://127.0.0.1") as client,
+        client.websocket_connect(
+            "/ws", headers={"host": "127.0.0.1"}, subprotocols=PROTOCOLS
+        ) as socket,
     ):
         socket.send_json(
             {
@@ -50,8 +61,10 @@ def test_websocket_handshake_synchronizes_health_and_initial_state() -> None:
 
 def test_websocket_rejects_malformed_payloads_and_closes() -> None:
     with (
-        TestClient(create_app(), base_url="http://127.0.0.1") as client,
-        client.websocket_connect("/ws", headers={"host": "127.0.0.1"}) as socket,
+        TestClient(app(), base_url="http://127.0.0.1") as client,
+        client.websocket_connect(
+            "/ws", headers={"host": "127.0.0.1"}, subprotocols=PROTOCOLS
+        ) as socket,
     ):
         socket.send_text("not json")
         error = socket.receive_json()
@@ -65,8 +78,10 @@ def test_websocket_rejects_malformed_payloads_and_closes() -> None:
 
 def test_websocket_rejects_an_incompatible_protocol_version() -> None:
     with (
-        TestClient(create_app(), base_url="http://127.0.0.1") as client,
-        client.websocket_connect("/ws", headers={"host": "127.0.0.1"}) as socket,
+        TestClient(app(), base_url="http://127.0.0.1") as client,
+        client.websocket_connect(
+            "/ws", headers={"host": "127.0.0.1"}, subprotocols=PROTOCOLS
+        ) as socket,
     ):
         socket.send_json(
             {

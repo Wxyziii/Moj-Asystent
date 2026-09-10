@@ -1,14 +1,19 @@
-"""Development entry point for the local core service."""
+"""Authenticated entry point for the local core service."""
+
+import os
 
 import uvicorn
 
 from .api import CoreSettings, create_app
+from .audio import AudioConfig
+from .auth import SessionCredential
 
 
 def create_server(settings: CoreSettings) -> uvicorn.Server:
-    return uvicorn.Server(
+    app = create_app(settings)
+    server = uvicorn.Server(
         uvicorn.Config(
-            create_app(settings),
+            app,
             host=settings.host,
             port=settings.port,
             ws="websockets-sansio",
@@ -18,7 +23,18 @@ def create_server(settings: CoreSettings) -> uvicorn.Server:
             access_log=False,
         )
     )
+    app.state.request_shutdown = lambda: setattr(server, "should_exit", True)
+    return server
 
 
 def main() -> None:
-    create_server(CoreSettings()).run()
+    raw_credential = os.environ.get("MOJ_ASYSTENT_SESSION_CREDENTIAL")
+    if raw_credential is None:
+        raise RuntimeError("Core requires a per-launch session credential")
+    create_server(
+        CoreSettings(
+            credential=SessionCredential.from_value(raw_credential),
+            audio=AudioConfig.from_environment(),
+            audio_enabled=True,
+        )
+    ).run()

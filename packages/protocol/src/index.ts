@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = "1.0" as const;
+export const PROTOCOL_VERSION = "1.1" as const;
 
 export const assistantStates = [
   "idle",
@@ -35,6 +35,23 @@ export interface AssistantStateChanged extends EventBase {
   type: "assistant.state.changed";
   payload: { previous_state: AssistantState | null; state: AssistantState };
 }
+export interface AudioTranscriptFinal extends EventBase {
+  type: "audio.transcript.final";
+  payload: {
+    operation_id: string;
+    text: string;
+    language: "pl";
+    duration_ms: number;
+  };
+}
+export interface AssistantResponseCompleted extends EventBase {
+  type: "assistant.response.completed";
+  payload: {
+    operation_id: string;
+    text: string;
+    kind: "milestone_3_placeholder";
+  };
+}
 export interface SystemError extends EventBase {
   type: "system.error";
   payload: {
@@ -47,7 +64,12 @@ export interface SystemError extends EventBase {
   };
 }
 export type ProtocolEvent =
-  ClientHello | SystemHealth | AssistantStateChanged | SystemError;
+  | ClientHello
+  | SystemHealth
+  | AssistantStateChanged
+  | AudioTranscriptFinal
+  | AssistantResponseCompleted
+  | SystemError;
 
 export function createClientHello(clientId: string): ClientHello {
   return {
@@ -67,8 +89,8 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
     case "client.hello":
       return exactObject(payload, ["client_id", "protocol_version"]) &&
         typeof payload.client_id === "string" &&
-        payload.client_id.length >= 1 &&
-        payload.client_id.length <= 128 &&
+        codePointLength(payload.client_id) >= 1 &&
+        codePointLength(payload.client_id) <= 128 &&
         payload.protocol_version === PROTOCOL_VERSION
         ? (value as unknown as ClientHello)
         : null;
@@ -81,12 +103,32 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
           isAssistantState(payload.previous_state))
         ? (value as unknown as AssistantStateChanged)
         : null;
+    case "audio.transcript.final":
+      return exactObject(payload, [
+        "operation_id",
+        "text",
+        "language",
+        "duration_ms",
+      ]) &&
+        isUuid(payload.operation_id) &&
+        boundedString(payload.text, 1, 8_192) &&
+        payload.language === "pl" &&
+        Number.isInteger(payload.duration_ms) &&
+        Number(payload.duration_ms) > 0 &&
+        Number(payload.duration_ms) <= 120_000
+        ? (value as unknown as AudioTranscriptFinal)
+        : null;
+    case "assistant.response.completed":
+      return exactObject(payload, ["operation_id", "text", "kind"]) &&
+        isUuid(payload.operation_id) &&
+        boundedString(payload.text, 1, 8_192) &&
+        payload.kind === "milestone_3_placeholder"
+        ? (value as unknown as AssistantResponseCompleted)
+        : null;
     case "system.error":
       return exactObject(payload, ["code", "message"]) &&
         errorCodes.includes(payload.code as (typeof errorCodes)[number]) &&
-        typeof payload.message === "string" &&
-        payload.message.length >= 1 &&
-        payload.message.length <= 256
+        boundedString(payload.message, 1, 256)
         ? (value as unknown as SystemError)
         : null;
     default:
@@ -140,6 +182,20 @@ function isAssistantState(value: unknown): value is AssistantState {
   );
 }
 
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && uuidPattern.test(value);
+}
+
+function boundedString(value: unknown, minimum: number, maximum: number): value is string {
+  if (typeof value !== "string") return false;
+  const length = codePointLength(value);
+  return length >= minimum && length <= maximum;
+}
+
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
 function isUtcTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const match = utcPattern.exec(value);
@@ -172,12 +228,10 @@ function isEnvelope(
       "payload",
     ]) &&
     value.protocol_version === PROTOCOL_VERSION &&
-    typeof value.event_id === "string" &&
-    uuidPattern.test(value.event_id) &&
+    isUuid(value.event_id) &&
     isUtcTimestamp(value.occurred_at) &&
     (value.correlation_id === null ||
-      (typeof value.correlation_id === "string" &&
-        uuidPattern.test(value.correlation_id))) &&
+      isUuid(value.correlation_id)) &&
     typeof value.type === "string" &&
     typeof value.payload === "object" &&
     value.payload !== null &&

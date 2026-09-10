@@ -66,7 +66,7 @@ Completed scope:
 
 ## Milestone 3 — Polish voice pipeline
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -77,6 +77,16 @@ Deliverables:
 - Piper Polish TTS;
 - follow-up conversation mode;
 - privacy-safe rolling audio buffer.
+
+Completed scope:
+
+- configurable local microphone ingress and non-persistent level calibration metrics;
+- temporary openWakeWord development phrase behind the replaceable wake provider (custom naming remains Milestone 4);
+- Silero VAD with speech/trailing-silence thresholds and a maximum utterance duration;
+- faster-whisper Small/replaceable model forced to Polish and structured segment output;
+- configurable Piper `pl_PL` voice playback with cancellation and self-trigger suppression;
+- deterministic no-LLM response, follow-up listening window and full state/event synchronization;
+- per-launch authenticated Tauri/core boundary for audio-derived content.
 
 ## Milestone 4 — Custom wake-name onboarding
 

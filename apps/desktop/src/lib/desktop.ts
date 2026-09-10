@@ -17,3 +17,7 @@ export async function hideOverlay() {
     // No-op in browser preview.
   }
 }
+
+export async function getCoreSessionCredential(): Promise<string> {
+  return invoke<string>("get_core_session_credential");
+}

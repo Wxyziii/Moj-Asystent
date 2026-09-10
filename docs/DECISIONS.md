@@ -4,11 +4,17 @@
 
 Decision: desktop and core exchange explicit protocol-v1 envelopes over a localhost-only HTTP/WebSocket boundary. Every event contains a protocol version, event ID, UTC timestamp and nullable correlation ID. Unknown event types, extra fields and incompatible versions are rejected before they reach assistant state handling.
 
-Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.0` client therefore rejects `1.1`. Additive, backward-compatible changes may introduce `1.1` only after both consumers explicitly list and validate it; during migration the core may support both exact versions. Any breaking schema or behavior change requires a new major version.
+Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.0` client therefore rejects `1.1`. Protocol `1.1` is the current exact capability set and adds authenticated final-transcript and completed-placeholder-response events. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.1`. Any breaking schema or behavior change requires a new major version.
 
 Connection rule: the desktop proves liveness through a bounded health check and a correlated WebSocket handshake, then reconnects with exponential backoff capped at 30 seconds. The core owns the authoritative state on one event loop and correlates every outbound event to that session's hello event. Event IDs are unique within a stream and duplicate IDs are rejected; events from superseded desktop connection attempts are ignored.
 
 Reason: it allows the Tauri UI and Python core to evolve independently without treating local payloads as trusted or silently changing assistant behavior.
+
+## 2026-09-10 — Per-launch local core credential
+
+Decision: Tauri creates a fresh high-entropy credential for each desktop launch, passes it only to the child core process environment and exposes it only to the trusted application webview. HTTP uses an exact bearer token and WebSocket setup uses a credential subprotocol; both fail closed before sensitive voice events are accepted. The credential is never persisted or logged, and the owned core process is terminated with the desktop session.
+
+Reason: loopback binding prevents remote access but does not by itself distinguish the desktop from unrelated local web pages or processes. This is a narrow application-session boundary, not an account system or a claim of isolation from malicious software already running as the same OS user.
 
 This file records product/architecture decisions that should not be silently changed.
 

@@ -3,6 +3,7 @@ import {
   parseHealth,
   parseProtocolEvent,
   type AssistantState,
+  type ProtocolEvent,
 } from "@moj-asystent/protocol";
 
 export type CoreConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -10,24 +11,24 @@ const defaultUrl = import.meta.env.VITE_CORE_URL ?? "http://127.0.0.1:8765";
 const HANDSHAKE_TIMEOUT = 5_000;
 const LIVENESS_TIMEOUT = 25_000;
 const MAX_MESSAGE_BYTES = 32_768;
+const credentialPattern = /^[A-Za-z0-9_-]{43,128}$/;
+
+export type CoreContentEvent = Extract<
+  ProtocolEvent,
+  { type: "audio.transcript.final" | "assistant.response.completed" }
+>;
 
 /** One owned connection at a time; every callback is scoped to its attempt. */
 export function connectToCore(
   onStatus: (status: CoreConnectionStatus) => void,
   onState: (state: AssistantState) => void,
+  credential: string,
+  onContent: (event: CoreContentEvent) => void = () => undefined,
   baseUrl = defaultUrl,
 ): () => void {
-  const url = new URL(baseUrl);
-  if (
-    url.protocol !== "http:" ||
-    !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) ||
-    url.username ||
-    url.password ||
-    url.pathname !== "/" ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error("Core URL must be a local HTTP origin");
+  const url = validateCoreUrl(baseUrl);
+  if (!credentialPattern.test(credential)) {
+    throw new Error("Core session credential is invalid");
   }
   let disposed = false;
   let attempt = 0;
@@ -66,6 +67,7 @@ export function connectToCore(
     armDeadline(HANDSHAKE_TIMEOUT);
     try {
       const response = await fetch(url.origin + "/health", {
+        headers: { Authorization: `Bearer ${credential}` },
         signal: controller.signal,
         redirect: "error",
         cache: "no-store",
@@ -84,6 +86,7 @@ export function connectToCore(
       }
       const connection = new WebSocket(
         url.origin.replace(/^http:/, "ws:") + "/ws",
+        ["moj-asystent.v1", `credential.${credential}`],
       );
       socket = connection;
       const hello = createClientHello("desktop-overlay");
@@ -123,10 +126,24 @@ export function connectToCore(
             else armDeadline(LIVENESS_TIMEOUT);
             return;
           }
+          if (event.correlation_id !== hello.event_id || phase === "health") {
+            fail();
+            return;
+          }
+          if (
+            event.type === "audio.transcript.final" ||
+            event.type === "assistant.response.completed"
+          ) {
+            if (phase !== "ready") {
+              fail();
+              return;
+            }
+            onContent(event);
+            armDeadline(LIVENESS_TIMEOUT);
+            return;
+          }
           if (
             event.type !== "assistant.state.changed" ||
-            phase === "health" ||
-            event.correlation_id !== hello.event_id ||
             (phase === "snapshot" && event.payload.previous_state !== null) ||
             (phase === "ready" &&
               event.payload.previous_state !== previousState)
@@ -159,4 +176,36 @@ export function connectToCore(
     clearTimeout(retry);
     cleanup();
   };
+}
+
+export async function sendAudioCommand(
+  command: "listen" | "cancel",
+  credential: string,
+  baseUrl = defaultUrl,
+): Promise<void> {
+  if (!credentialPattern.test(credential))
+    throw new Error("Invalid credential");
+  const url = validateCoreUrl(baseUrl);
+  const response = await fetch(`${url.origin}/audio/${command}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${credential}` },
+    redirect: "error",
+  });
+  if (!response.ok) throw new Error("Core rejected audio command");
+}
+
+function validateCoreUrl(baseUrl: string): URL {
+  const url = new URL(baseUrl);
+  if (
+    url.protocol !== "http:" ||
+    !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Core URL must be a local HTTP origin");
+  }
+  return url;
 }

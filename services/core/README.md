@@ -2,13 +2,17 @@
 
 Target: **Python 3.12 + FastAPI + WebSocket**.
 
-This directory contains the long-running local assistant service. Milestone 2
-provides a Python 3.12 FastAPI boundary at `127.0.0.1:8765` by default.
+This directory contains the long-running local assistant service. Milestones 2–3
+provide a Python 3.12 FastAPI boundary and Polish audio pipeline at
+`127.0.0.1:8765` by default.
 
 ## Running locally
 
-Run `uv sync --all-groups`, then `uv run moj-asystent-core` from this directory.
-The service exposes `GET /health` and `/ws`. WebSocket clients must send a
+Run `uv sync --all-groups`, set a fresh `MOJ_ASYSTENT_SESSION_CREDENTIAL`, then
+run `uv run moj-asystent-core` from this directory. Normal desktop development
+does this automatically through the Tauri-owned process lifecycle.
+The service exposes authenticated `GET /health`, `POST /audio/listen`,
+`POST /audio/cancel`, `POST /shutdown` and `/ws`. WebSocket clients must send a
 protocol-v1 `client.hello` before receiving health and state synchronization.
 Invalid origin, size, schema and protocol-version inputs are rejected.
 
@@ -17,8 +21,11 @@ bounded per-client queues. New and reconnected clients receive a correlated,
 authoritative snapshot. Slow clients are disconnected so they cannot block the
 core. Shutdown cancels active WebSocket session work before lifecycle teardown.
 
-No model, audio, microphone, screen, tool or persistence implementation is
-included at this stage.
+Milestone 3 includes real sounddevice, openWakeWord, Silero VAD, faster-whisper
+and Piper adapters. Model weights stay in user caches/outside Git. Set
+`MOJ_ASYSTENT_TTS_VOICE_PATH` to a Polish Piper `.onnx` voice when it is not in
+the default local application model directory. LLM, screen, tool and persistence
+implementations remain out of scope.
 
 ## Responsibilities
 

@@ -6,16 +6,25 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 3 Polish voice pipeline: bounded in-memory microphone frames, openWakeWord development activation, Silero VAD speech boundaries, faster-whisper forced to `pl`, Piper `pl_PL` playback and timed follow-up listening.
+- Cancellable audio orchestration with operation generations, stale-result suppression, playback feedback blocking, device retry and deterministic Polish placeholder responses without an LLM.
+- Protocol `1.1` transcript and completed-response events, validated consistently by JSON Schema, Python and TypeScript.
+- Per-launch Tauri/core credential protecting health, audio commands and WebSocket traffic; Tauri starts and owns the development core process and removes it on application exit.
+- Desktop rendering of authenticated core transcripts/responses with a clear distinction between live and simulated state.
+
 - Milestone 2 architecture hardening: bounded desktop reconnect backoff, correlated session snapshots, heartbeat liveness checks and stale-session suppression.
 - Single-event-loop core runtime with ordered bounded subscriber queues, deterministic multi-client state publication and clean cancellation during shutdown.
 - One shared JSON Schema acceptance corpus exercised by JSON Schema, Python and TypeScript validators, plus real Uvicorn restart/shutdown integration tests.
 
 ### Fixed
 
+- Audio-provider work and microphone callbacks no longer mutate assistant state outside the runtime's owning asyncio loop.
+- Cancellation and shutdown now release RAM audio buffers and close capture/playback resources without allowing late STT/TTS results to change state.
+
 - Desktop now recovers when the core starts late or restarts while the overlay remains open.
 - Health requests now allow only known desktop origins, while HTTP and WebSocket Host headers remain restricted to loopback names.
 - Binary, oversized, malformed, duplicate, out-of-order and incorrectly correlated protocol messages now fail closed.
-- Protocol `1.0` version handling and documentation now consistently reject `1.1` until explicit support is implemented.
+- Protocol `1.0` version handling remains exact; clients move to `1.1` explicitly for the Milestone 3 voice events.
 - Updated the frontend test runner to a patched release after the dependency audit identified vulnerable development-server code.
 
 - Milestone 2 local assistant core under `services/core`, using Python 3.12, FastAPI and a localhost-only HTTP/WebSocket boundary.

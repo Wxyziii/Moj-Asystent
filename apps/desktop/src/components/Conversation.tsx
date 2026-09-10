@@ -11,6 +11,7 @@ import {
   AssistantStateDefinition,
 } from "../domain/assistant";
 import type { CoreConnectionStatus } from "../lib/coreClient";
+import type { ConversationMessage } from "../hooks/useAssistant";
 import { StatusOrb } from "./StatusOrb";
 import { Waveform } from "./Waveform";
 
@@ -19,9 +20,11 @@ interface ConversationProps {
   definition: AssistantStateDefinition;
   onCompact: () => void;
   onSettings: () => void;
-  onStateChange: (state: AssistantState) => void;
   onPreviewState: (state: AssistantState) => void;
   coreStatus: CoreConnectionStatus;
+  stateSource: "core" | "simulation";
+  messages: ConversationMessage[];
+  onToggleListening: () => void;
 }
 
 export function Conversation({
@@ -29,9 +32,11 @@ export function Conversation({
   definition,
   onCompact,
   onSettings,
-  onStateChange,
   onPreviewState,
   coreStatus,
+  stateSource,
+  messages,
+  onToggleListening,
 }: ConversationProps) {
   const isWorking = ["thinking", "transcribing", "speaking"].includes(state);
   const isListening = ["listening", "wake_detected", "follow_up"].includes(
@@ -92,25 +97,27 @@ export function Conversation({
           <span>Ten komputer</span>
           <span>Brak aktywnego kontekstu</span>
         </div>
-        <article className="message message--user">
-          <p className="message__label">Ty</p>
-          <p>Dlaczego ten program nie działa?</p>
-        </article>
-        <article className="message message--assistant">
-          <p className="message__label">Mój Asystent</p>
-          <p>
-            Rdzeń lokalny jest gotowy do wymiany stanów. Odpowiedzi AI i
-            przetwarzanie głosu pozostają celowo poza tym etapem.
-          </p>
-          <div className="suggestion-row">
-            <button onClick={() => onStateChange("thinking")}>
-              Pokaż przykład
-            </button>
-            <button onClick={() => onStateChange("error")}>
-              Zasymuluj problem
-            </button>
-          </div>
-        </article>
+        {messages.length === 0 ? (
+          <article className="message message--assistant">
+            <p className="message__label">Mój Asystent</p>
+            <p>
+              Powiedz krótkie zdanie po polsku. Na tym etapie odpowiem
+              deterministycznym komunikatem bez modelu AI.
+            </p>
+          </article>
+        ) : (
+          messages.map((message) => (
+            <article
+              key={message.id}
+              className={`message message--${message.role}`}
+            >
+              <p className="message__label">
+                {message.role === "user" ? "Ty" : "Mój Asystent"}
+              </p>
+              <p>{message.text}</p>
+            </article>
+          ))
+        )}
         {isWorking && (
           <article className="status-message">
             <Waveform active={state === "speaking"} />
@@ -133,11 +140,12 @@ export function Conversation({
           aria-describedby="composer-help"
         />
         <span id="composer-help" className="sr-only">
-          W Milestone 1 pole jest elementem demonstracyjnym.
+          Pole tekstowe pozostaje wyłączone do etapu lokalnego czatu.
         </span>
         <button
           className={`mic-button ${isListening ? "mic-button--active" : ""}`}
-          onClick={() => onStateChange(isListening ? "idle" : "listening")}
+          onClick={onToggleListening}
+          disabled={coreStatus !== "connected"}
           aria-label={
             isListening ? "Zatrzymaj nasłuchiwanie" : "Rozpocznij nasłuchiwanie"
           }
@@ -153,13 +161,16 @@ export function Conversation({
         </button>
       </footer>
       <label className="state-switcher">
-        <ChevronDown size={15} /> Stan demonstracyjny: {definition.label}
+        <ChevronDown size={15} />{" "}
+        {stateSource === "core" ? "Stan rdzenia" : "Stan demonstracyjny"}:{" "}
+        {definition.label}
         <select
           value={state}
           onChange={(event) =>
             onPreviewState(event.target.value as AssistantState)
           }
           aria-label="Podgląd stanu asystenta"
+          disabled={coreStatus === "connected"}
         >
           {assistantStates.map((assistantState) => (
             <option key={assistantState} value={assistantState}>

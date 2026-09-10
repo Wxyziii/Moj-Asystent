@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from moj_asystent_core.protocol import AssistantStateChanged
 from moj_asystent_core.runtime import CoreRuntime
 from moj_asystent_core.state import InvalidStateTransition
 
@@ -13,12 +14,15 @@ async def test_multiple_subscribers_receive_one_ordered_authoritative_state() ->
     first_id, second_id = uuid4(), uuid4()
     first, second = runtime.subscribe(first_id), runtime.subscribe(second_id)
     for queue, hello_id in [(first, first_id), (second, second_id)]:
-        assert queue.get_nowait().correlation_id == hello_id
+        health = queue.get_nowait()
+        assert health is not None and health.correlation_id == hello_id
         snapshot = queue.get_nowait()
+        assert isinstance(snapshot, AssistantStateChanged)
         assert snapshot.payload.previous_state is None
         assert snapshot.correlation_id == hello_id
     event = runtime.transition("listening", expected_state="idle")
     first_event, second_event = first.get_nowait(), second.get_nowait()
+    assert first_event is not None and second_event is not None
     assert first_event.event_id == second_event.event_id == event.event_id
     assert first_event.payload == second_event.payload == event.payload
     assert first_event.correlation_id == first_id
@@ -29,7 +33,9 @@ async def test_multiple_subscribers_receive_one_ordered_authoritative_state() ->
     assert first.empty() and second.empty()
     late = runtime.subscribe(uuid4())
     late.get_nowait()
-    assert late.get_nowait().payload.state == "listening"
+    late_snapshot = late.get_nowait()
+    assert isinstance(late_snapshot, AssistantStateChanged)
+    assert late_snapshot.payload.state == "listening"
     await runtime.shutdown()
     with pytest.raises(RuntimeError, match="stopping"):
         runtime.transition("idle")
@@ -65,4 +71,4 @@ def test_invalid_initial_state_fails_at_construction() -> None:
     from moj_asystent_core.state import AssistantStateMachine
 
     with pytest.raises(InvalidStateTransition):
-        AssistantStateMachine("unknown")
+        AssistantStateMachine("unknown")  # ty: ignore[invalid-argument-type]

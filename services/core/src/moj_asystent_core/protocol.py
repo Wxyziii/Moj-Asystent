@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, field_validator
 
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "1.1"
 AssistantState = Literal[
     "idle",
     "wake_detected",
@@ -46,13 +46,13 @@ class EventPayload(StrictModel):
 
 class ClientHelloPayload(EventPayload):
     client_id: Annotated[str, Field(min_length=1, max_length=128)]
-    protocol_version: Literal["1.0"]
+    protocol_version: Literal["1.1"]
 
 
 class SystemHealthPayload(EventPayload):
     service: Literal["core"]
     status: Literal["ready", "stopping"]
-    protocol_version: Literal["1.0"]
+    protocol_version: Literal["1.1"]
     assistant_state: AssistantState
 
 
@@ -61,13 +61,36 @@ class AssistantStateChangedPayload(EventPayload):
     state: AssistantState
 
 
+class AudioTranscriptFinalPayload(EventPayload):
+    operation_id: UUID
+    text: Annotated[str, Field(min_length=1, max_length=8_192)]
+    language: Literal["pl"]
+    duration_ms: Annotated[StrictInt, Field(gt=0, le=120_000)]
+
+    @field_validator("operation_id", mode="before")
+    @classmethod
+    def validate_operation_id(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
+class AssistantResponseCompletedPayload(EventPayload):
+    operation_id: UUID
+    text: Annotated[str, Field(min_length=1, max_length=8_192)]
+    kind: Literal["milestone_3_placeholder"]
+
+    @field_validator("operation_id", mode="before")
+    @classmethod
+    def validate_operation_id(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
 class SystemErrorPayload(EventPayload):
     code: Literal["invalid_message", "unsupported_protocol", "invalid_origin", "message_too_large"]
     message: Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class EventBase(StrictModel):
-    protocol_version: Literal["1.0"]
+    protocol_version: Literal["1.1"]
     event_id: UUID
     occurred_at: datetime
     correlation_id: UUID | None
@@ -75,19 +98,7 @@ class EventBase(StrictModel):
     @field_validator("event_id", "correlation_id", mode="before")
     @classmethod
     def validate_uuid(cls, value: object) -> object:
-        if (
-            value is not None
-            and not isinstance(value, UUID)
-            and (
-                not isinstance(value, str)
-                or not re.fullmatch(
-                    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-                    value,
-                )
-            )
-        ):
-            raise ValueError("Expected a hyphenated UUID")
-        return value
+        return None if value is None else _validate_hyphenated_uuid(value)
 
     @field_validator("occurred_at", mode="before")
     @classmethod
@@ -119,16 +130,35 @@ class AssistantStateChanged(EventBase):
     payload: AssistantStateChangedPayload
 
 
+class AudioTranscriptFinal(EventBase):
+    type: Literal["audio.transcript.final"]
+    payload: AudioTranscriptFinalPayload
+
+
+class AssistantResponseCompleted(EventBase):
+    type: Literal["assistant.response.completed"]
+    payload: AssistantResponseCompletedPayload
+
+
 class SystemError(EventBase):
     type: Literal["system.error"]
     payload: SystemErrorPayload
 
 
-type ProtocolEvent = ClientHello | SystemHealth | AssistantStateChanged | SystemError
+type ProtocolEvent = (
+    ClientHello
+    | SystemHealth
+    | AssistantStateChanged
+    | AudioTranscriptFinal
+    | AssistantResponseCompleted
+    | SystemError
+)
 _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
     "client.hello": ClientHello,
     "system.health": SystemHealth,
     "assistant.state.changed": AssistantStateChanged,
+    "audio.transcript.final": AudioTranscriptFinal,
+    "assistant.response.completed": AssistantResponseCompleted,
     "system.error": SystemError,
 }
 
@@ -139,7 +169,7 @@ def parse_event(value: object) -> ProtocolEvent:
     version = value.get("protocol_version")
     if version != PROTOCOL_VERSION:
         raise ProtocolValidationError(
-            "Unsupported protocol_version; expected 1.0",
+            "Unsupported protocol_version; expected 1.1",
             "unsupported_protocol",
         )
     event_type = value.get("type")
@@ -152,12 +182,36 @@ def parse_event(value: object) -> ProtocolEvent:
         raise ProtocolValidationError("Invalid event fields") from error
 
 
+def _validate_hyphenated_uuid(value: object) -> object:
+    if not isinstance(value, UUID) and (
+        not isinstance(value, str)
+        or not re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+            value,
+        )
+    ):
+        raise ValueError("Expected a hyphenated UUID")
+    return value
+
+
 def new_event(
-    event_type: Literal["system.health", "assistant.state.changed", "system.error"],
+    event_type: Literal[
+        "system.health",
+        "assistant.state.changed",
+        "audio.transcript.final",
+        "assistant.response.completed",
+        "system.error",
+    ],
     payload: EventPayload,
     *,
     correlation_id: UUID | None = None,
-) -> SystemHealth | AssistantStateChanged | SystemError:
+) -> (
+    SystemHealth
+    | AssistantStateChanged
+    | AudioTranscriptFinal
+    | AssistantResponseCompleted
+    | SystemError
+):
     values = {
         "protocol_version": PROTOCOL_VERSION,
         "event_id": uuid4(),
@@ -166,4 +220,11 @@ def new_event(
         "type": event_type,
         "payload": payload,
     }
-    return cast(SystemHealth | AssistantStateChanged | SystemError, parse_event(values))
+    return cast(
+        SystemHealth
+        | AssistantStateChanged
+        | AudioTranscriptFinal
+        | AssistantResponseCompleted
+        | SystemError,
+        parse_event(values),
+    )

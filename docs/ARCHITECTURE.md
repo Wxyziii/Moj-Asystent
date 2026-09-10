@@ -101,6 +101,12 @@ microphone
 
 Raw recordings are not persisted by default.
 
+The microphone callback crosses a bounded thread-safe queue and never mutates
+assistant state. The asyncio-owned audio orchestrator uses generation and
+operation IDs for cancellation ownership, runs wake/VAD/STT/TTS model work off
+the event loop, suppresses wake input during playback and clears utterance
+buffers after every terminal path.
+
 ### 4. Context engine
 
 Build one normalized context snapshot from available sources:
@@ -228,6 +234,9 @@ The desktop app owns lifecycle/startup UX; the core owns assistant behavior.
 
 ## Communication protocol
 
+Tauri creates a fresh memory-only credential and passes it to its owned core
+child process for the lifetime of one application launch. The credential is
+required before any health, audio-control or WebSocket traffic is accepted.
 The HTTP health response is validated before the desktop opens a WebSocket. A
 WebSocket session begins with `client.hello`; the core correlates its health
 response and authoritative state snapshot to that hello event. The desktop
@@ -245,16 +254,12 @@ cancels active session tasks before lifecycle teardown completes.
 Use a shared schema package for messages such as:
 
 - `assistant.state.changed`
-- `audio.transcript.partial`
 - `audio.transcript.final`
-- `assistant.response.delta`
 - `assistant.response.completed`
-- `tool.requested`
-- `tool.confirmation.required`
-- `tool.completed`
-- `context.screen.inspecting`
-- `watcher.triggered`
 - `system.health`
+
+This is the implemented Protocol `1.1` set. The other planned event families
+are added only with their owning milestones.
 
 Messages should include IDs so long-running actions can be correlated.
 

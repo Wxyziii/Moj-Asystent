@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Core service & protocol",
-    "status": "Milestone 2 complete — local FastAPI core and typed desktop protocol",
+    "stage": "Polish voice pipeline",
+    "status": "Milestone 3 complete — authenticated local wake, VAD, Polish STT/TTS and follow-up",
     "updated": "2026-09-10"
   },
   "principles": [
@@ -47,8 +47,8 @@
     {
       "id": 3,
       "name": "Polish voice",
-      "status": "planned",
-      "description": "Wake word, VAD, forced-Polish STT, TTS and follow-up mode."
+      "status": "done",
+      "description": "Authenticated openWakeWord, Silero VAD, forced-Polish faster-whisper, Piper TTS and cancellable follow-up mode."
     },
     {
       "id": 4,
@@ -100,6 +100,16 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-10",
+      "title": "Milestone 3: Polish voice pipeline",
+      "items": [
+        "Added bounded RAM-only microphone capture, temporary openWakeWord activation and Silero speech boundaries.",
+        "Added forced-Polish faster-whisper transcription, deterministic processing and cancellable Piper playback.",
+        "Added follow-up listening, stale-operation suppression and safe audio shutdown/retry behavior.",
+        "Protected voice traffic with a per-launch Tauri/core credential and Protocol 1.1 events."
+      ]
+    },
     {
       "date": "2026-09-10",
       "title": "Milestone 2 architecture review",

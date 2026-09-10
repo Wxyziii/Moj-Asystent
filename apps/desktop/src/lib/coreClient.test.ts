@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { connectToCore } from "./coreClient";
+import { connectToCore, sendAudioCommand } from "./coreClient";
 import type { ClientHello, AssistantState } from "@moj-asystent/protocol";
+
+const TOKEN = "a".repeat(64);
+const connect = (
+  onStatus: Parameters<typeof connectToCore>[0],
+  onState: Parameters<typeof connectToCore>[1],
+  baseUrl?: string,
+) => connectToCore(onStatus, onState, TOKEN, () => undefined, baseUrl);
 
 class FakeSocket extends EventTarget {
   static instances: FakeSocket[] = [];
   sent: string[] = [];
   close = vi.fn();
-  constructor() {
+  constructor(
+    public readonly url?: string,
+    public readonly protocols?: string[],
+  ) {
     super();
     FakeSocket.instances.push(this);
   }
@@ -30,7 +40,7 @@ class FakeSocket extends EventTarget {
 const health = {
   service: "core",
   status: "ready",
-  protocol_version: "1.0",
+  protocol_version: "1.1",
   assistant_state: "idle",
 };
 const response = () => ({
@@ -42,7 +52,7 @@ const wire = (
   payload: unknown,
   correlation_id: string | null = null,
 ) => ({
-  protocol_version: "1.0",
+  protocol_version: "1.1",
   event_id: crypto.randomUUID(),
   occurred_at: new Date().toISOString(),
   correlation_id,
@@ -79,7 +89,7 @@ afterEach(() => {
 it("connects if the core starts after the desktop, with capped exponential backoff", async () => {
   request.mockRejectedValue(new Error("offline"));
   const status = vi.fn();
-  stop = connectToCore(status, vi.fn());
+  stop = connect(status, vi.fn());
   await vi.advanceTimersByTimeAsync(0);
   expect(request).toHaveBeenCalledTimes(1);
   for (const [index, delay] of [
@@ -99,7 +109,7 @@ it("connects if the core starts after the desktop, with capped exponential backo
 it("reconnects after a crash and ignores every callback from the old connection", async () => {
   const state = vi.fn();
   const status = vi.fn();
-  stop = connectToCore(status, state);
+  stop = connect(status, state);
   await vi.advanceTimersByTimeAsync(0);
   const old = FakeSocket.instances[0];
   synchronize(old, "speaking");
@@ -133,7 +143,7 @@ it("cancels pending HTTP work and suppresses its late result on disposal", async
       }),
   );
   const status = vi.fn();
-  stop = connectToCore(status, vi.fn());
+  stop = connect(status, vi.fn());
   const signal = request.mock.calls[0][1].signal as AbortSignal;
   stop();
   expect(signal.aborted).toBe(true);
@@ -146,7 +156,7 @@ it("cancels pending HTTP work and suppresses its late result on disposal", async
 
 it("disposes sockets and timers with no subsequent state callbacks", async () => {
   const state = vi.fn();
-  stop = connectToCore(vi.fn(), state);
+  stop = connect(vi.fn(), state);
   await vi.advanceTimersByTimeAsync(0);
   const socket = FakeSocket.instances[0];
   synchronize(socket);
@@ -168,7 +178,7 @@ it.each(["http", "socket", "snapshot"])(
   async (phase) => {
     if (phase === "http") request.mockReturnValue(new Promise(() => {}));
     const status = vi.fn();
-    stop = connectToCore(status, vi.fn());
+    stop = connect(status, vi.fn());
     await vi.advanceTimersByTimeAsync(0);
     if (phase === "snapshot") {
       const socket = FakeSocket.instances[0];
@@ -184,7 +194,7 @@ it.each(["http", "socket", "snapshot"])(
 
 it("requires correlated health and snapshot before connected status", async () => {
   const status = vi.fn();
-  stop = connectToCore(status, vi.fn());
+  stop = connect(status, vi.fn());
   await vi.advanceTimersByTimeAsync(0);
   const socket = FakeSocket.instances[0];
   socket.open();
@@ -200,6 +210,44 @@ it("requires correlated health and snapshot before connected status", async () =
   expect(status).toHaveBeenLastCalledWith("connected");
 });
 
+it("authenticates HTTP and WebSocket traffic and delivers sensitive content after sync", async () => {
+  const content = vi.fn();
+  stop = connectToCore(vi.fn(), vi.fn(), TOKEN, content);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(request.mock.calls[0][1].headers).toEqual({
+    Authorization: `Bearer ${TOKEN}`,
+  });
+  const socket = FakeSocket.instances[0];
+  synchronize(socket);
+  expect(socket.protocols).toEqual(["moj-asystent.v1", `credential.${TOKEN}`]);
+  const operation = crypto.randomUUID();
+  socket.frame(
+    wire(
+      "audio.transcript.final",
+      {
+        operation_id: operation,
+        text: "Dzień dobry",
+        language: "pl",
+        duration_ms: 800,
+      },
+      socket.hello.event_id,
+    ),
+  );
+  expect(content).toHaveBeenCalledOnce();
+});
+
+it("authenticates audio controls without putting credentials in the URL", async () => {
+  await sendAudioCommand("listen", TOKEN);
+  expect(request).toHaveBeenLastCalledWith(
+    "http://127.0.0.1:8765/audio/listen",
+    expect.objectContaining({
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    }),
+  );
+  expect(request.mock.calls.at(-1)?.[0]).not.toContain(TOKEN);
+});
+
 it.each([
   "malformed",
   "uncorrelated",
@@ -211,7 +259,7 @@ it.each([
 ])("rejects %s events and reconnects", async (scenario) => {
   const state = vi.fn();
   const status = vi.fn();
-  stop = connectToCore(status, state);
+  stop = connect(status, state);
   await vi.advanceTimersByTimeAsync(0);
   const socket = FakeSocket.instances[0];
   synchronize(socket);
@@ -260,7 +308,7 @@ it.each([
 
 it("detects a silent core and refreshes the liveness deadline on heartbeat", async () => {
   const status = vi.fn();
-  stop = connectToCore(status, vi.fn());
+  stop = connect(status, vi.fn());
   await vi.advanceTimersByTimeAsync(0);
   const socket = FakeSocket.instances[0];
   synchronize(socket);
@@ -272,13 +320,13 @@ it("detects a silent core and refreshes the liveness deadline on heartbeat", asy
   expect(status).toHaveBeenLastCalledWith("disconnected");
 });
 
-it("validates HTTP health before opening a socket", async () => {
+it("validates HTTP protocol compatibility before opening a socket", async () => {
   request.mockResolvedValue({
     ok: true,
-    text: async () => JSON.stringify({ ...health, protocol_version: "1.1" }),
+    text: async () => JSON.stringify({ ...health, protocol_version: "1.2" }),
   });
   const status = vi.fn();
-  stop = connectToCore(status, vi.fn());
+  stop = connect(status, vi.fn());
   await vi.advanceTimersByTimeAsync(0);
   expect(FakeSocket.instances).toHaveLength(0);
   expect(status).toHaveBeenLastCalledWith("disconnected");
@@ -290,7 +338,7 @@ it("rejects an oversized HTTP health response", async () => {
     text: async () => "x".repeat(32_769),
   });
   const status = vi.fn();
-  stop = connectToCore(status, vi.fn());
+  stop = connect(status, vi.fn());
   await vi.advanceTimersByTimeAsync(0);
   expect(FakeSocket.instances).toHaveLength(0);
   expect(status).toHaveBeenLastCalledWith("disconnected");
@@ -302,6 +350,6 @@ it.each([
   "https://127.0.0.1",
   "http://user:pass@localhost",
 ])("rejects a non-local or credentialed URL: %s", (url) => {
-  expect(() => connectToCore(vi.fn(), vi.fn(), url)).toThrow();
+  expect(() => connect(vi.fn(), vi.fn(), url)).toThrow();
   expect(request).not.toHaveBeenCalled();
 });

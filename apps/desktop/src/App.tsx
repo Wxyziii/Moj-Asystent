@@ -16,8 +16,10 @@ export default function App() {
     coreStatus,
     overlayMode,
     setOverlayMode,
-    transitionTo,
     previewState,
+    stateSource,
+    messages,
+    toggleListening,
   } = useAssistantUi();
   const definition = assistantStateDefinitions[assistantState];
 
@@ -60,9 +62,11 @@ export default function App() {
         definition={definition}
         onCompact={() => changeMode("compact")}
         onSettings={() => changeMode("settings")}
-        onStateChange={transitionTo}
         onPreviewState={previewState}
         coreStatus={coreStatus}
+        stateSource={stateSource}
+        messages={messages}
+        onToggleListening={() => void toggleListening()}
       />
     );
   return (
@@ -72,6 +76,8 @@ export default function App() {
       onExpand={() => changeMode("expanded")}
       onSettings={() => changeMode("settings")}
       onClose={() => void hideOverlay()}
+      stateSource={stateSource}
+      coreStatus={coreStatus}
     />
   );
 }

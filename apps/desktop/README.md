@@ -30,16 +30,14 @@ Do not put these here unless they are thin adapters:
 
 Those belong in `services/core/`.
 
-## First implementation task
-
-Bootstrap Tauri + React and implement simulated overlay states from `docs/OVERLAY_UI.md` before integrating real audio/AI.
-
-## Milestone 1
+## Implemented foundation
 
 Implemented: frameless always-on-top overlay, compact/expanded/settings modes,
 system tray controls, the `Ctrl` + `Shift` + `Spacja` fallback shortcut and Polish
-simulated assistant states. The frontend does not connect to the assistant core
-yet; its state fixtures are deliberately local to the UI.
+simulated assistant states. The desktop now owns the development core process,
+creates its memory-only session credential, reconnects with bounded backoff and
+renders authenticated core state, final Polish transcripts and deterministic
+Milestone 3 responses. Simulation remains clearly labeled for UI development.
 
 Run locally with `npm run dev` from the repository root. Validate the desktop
 shell with `npm --workspace @moj-asystent/desktop run tauri -- dev`.

@@ -21,6 +21,14 @@ Microphone
    -> speakers
 ```
 
+## Milestone 3 implementation
+
+The core now owns a cancellable asyncio audio pipeline. `sounddevice` supplies bounded 16-bit mono PCM frames through a thread-safe ingress; openWakeWord runs only in idle, Silero VAD bounds utterances, faster-whisper is forced to `language="pl"`, and Piper plays a configured `pl_PL` ONNX voice outside the event loop. Until Milestone 5, processing emits the deterministic response `Usłyszałem: … To testowa odpowiedź bez modelu AI.`
+
+Audio bytes and VAD buffers remain in RAM and are cleared after completion, cancellation, failure or shutdown. Provider work is tagged with a generation and operation UUID, so results finishing after cancellation cannot publish events or mutate the authoritative state. Wake processing is suppressed during TTS. Microphone failures retry after a bounded delay, while the shortcut and text overlay remain available.
+
+Configuration uses `MOJ_ASYSTENT_MICROPHONE_DEVICE`, `MOJ_ASYSTENT_SAMPLE_RATE`, `MOJ_ASYSTENT_WAKE_SENSITIVITY`, `MOJ_ASYSTENT_VAD_START_THRESHOLD`, `MOJ_ASYSTENT_VAD_END_THRESHOLD`, `MOJ_ASYSTENT_MAX_UTTERANCE_SECONDS`, `MOJ_ASYSTENT_STT_MODEL`, `MOJ_ASYSTENT_TTS_VOICE_PATH`, `MOJ_ASYSTENT_WAKE_MODEL_PATH`, `MOJ_ASYSTENT_FOLLOW_UP_SECONDS` and `MOJ_ASYSTENT_VOICE_RESPONSES`. If installed, the default Polish Piper voice is discovered under `%LOCALAPPDATA%/Moj-Asystent/models/piper/pl_PL-gosia-medium.onnx`; model downloads are explicit setup actions and remain outside the repository.
+
 ## Assistant state machine
 
 ```text

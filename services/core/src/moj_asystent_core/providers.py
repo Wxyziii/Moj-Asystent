@@ -1,8 +1,13 @@
-"""Replaceable provider interfaces; concrete engines belong to later milestones."""
+"""Replaceable provider interfaces for local assistant engines."""
 
-from typing import Protocol, runtime_checkable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from .audio import PcmFrame
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -22,27 +27,42 @@ class LanguageModelResponse(ProviderModel):
 
 
 class SpeechToTextRequest(ProviderModel):
-    audio_reference: str = Field(min_length=1, max_length=256)
+    pcm_s16le: bytes
+    sample_rate: int = Field(ge=8_000, le=48_000)
+    language: Literal["pl"]
+    duration_ms: int = Field(gt=0, le=120_000)
+
+
+class TranscriptionSegment(ProviderModel):
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    text: str = Field(min_length=1, max_length=4_096)
+    average_log_probability: float | None = None
 
 
 class SpeechToTextResponse(ProviderModel):
-    transcript: str
+    transcript: str = Field(min_length=1, max_length=8_192)
+    language: Literal["pl"]
+    duration_ms: int = Field(gt=0, le=120_000)
+    segments: tuple[TranscriptionSegment, ...]
 
 
 class TextToSpeechRequest(ProviderModel):
     text: str = Field(min_length=1, max_length=8_192)
+    language: Literal["pl"]
 
 
 class TextToSpeechResponse(ProviderModel):
-    audio_reference: str
+    duration_ms: int = Field(ge=0, le=120_000)
 
 
 class WakeWordRequest(ProviderModel):
-    audio_reference: str = Field(min_length=1, max_length=256)
+    pcm_s16le: bytes
+    sample_rate: int = Field(ge=8_000, le=48_000)
 
 
 class WakeWordResponse(ProviderModel):
-    detected: bool
+    score: float = Field(ge=0, le=1)
 
 
 @runtime_checkable
@@ -54,32 +74,62 @@ class LanguageModelProvider(Protocol):
 class SpeechToTextProvider(Protocol):
     async def transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse: ...
 
+    async def cancel(self) -> None: ...
+
 
 @runtime_checkable
 class TextToSpeechProvider(Protocol):
-    async def synthesize(self, request: TextToSpeechRequest) -> TextToSpeechResponse: ...
+    async def speak(self, request: TextToSpeechRequest) -> TextToSpeechResponse: ...
+
+    async def cancel(self) -> None: ...
 
 
 @runtime_checkable
 class WakeWordProvider(Protocol):
-    async def detect(self, request: WakeWordRequest) -> WakeWordResponse: ...
+    async def score(self, audio: PcmFrame) -> float: ...
+
+    def reset(self) -> None: ...
+
+
+@runtime_checkable
+class VoiceActivityProvider(Protocol):
+    async def probability(self, audio: PcmFrame) -> float: ...
+
+    def reset(self) -> None: ...
 
 
 class MockLanguageModelProvider:
     async def generate(self, request: LanguageModelRequest) -> LanguageModelResponse:
-        raise ProviderUnavailableError("LLM provider is not available in Milestone 2")
+        raise ProviderUnavailableError("LLM provider is not available before Milestone 5")
 
 
 class MockSpeechToTextProvider:
     async def transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse:
-        raise ProviderUnavailableError("STT provider is not available in Milestone 2")
+        raise ProviderUnavailableError("Mock STT provider is intentionally unavailable")
+
+    async def cancel(self) -> None:
+        pass
 
 
 class MockTextToSpeechProvider:
-    async def synthesize(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
-        raise ProviderUnavailableError("TTS provider is not available in Milestone 2")
+    async def speak(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
+        raise ProviderUnavailableError("Mock TTS provider is intentionally unavailable")
+
+    async def cancel(self) -> None:
+        pass
 
 
 class MockWakeWordProvider:
-    async def detect(self, request: WakeWordRequest) -> WakeWordResponse:
-        raise ProviderUnavailableError("Wake-word provider is not available in Milestone 2")
+    async def score(self, audio: PcmFrame) -> float:
+        raise ProviderUnavailableError("Mock wake-word provider is intentionally unavailable")
+
+    def reset(self) -> None:
+        pass
+
+
+class MockVoiceActivityProvider:
+    async def probability(self, audio: PcmFrame) -> float:
+        raise ProviderUnavailableError("VAD provider is not available")
+
+    def reset(self) -> None:
+        pass

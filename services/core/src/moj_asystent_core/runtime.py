@@ -5,12 +5,15 @@ from uuid import UUID
 
 from .protocol import (
     PROTOCOL_VERSION,
+    AssistantResponseCompletedPayload,
     AssistantState,
     AssistantStateChanged,
+    AudioTranscriptFinalPayload,
     ProtocolEvent,
     SystemHealthPayload,
     new_event,
 )
+from .providers import SpeechToTextResponse
 from .state import AssistantStateMachine
 
 
@@ -34,6 +37,11 @@ class CoreRuntime:
             status="stopping" if self.stopping else "ready",
             assistant_state=self._machine.state,
         )
+
+    @property
+    def state(self) -> AssistantState:
+        self._assert_owner()
+        return self._machine.state
 
     def subscribe(self, hello_id: UUID) -> asyncio.Queue[ProtocolEvent | None]:
         self._assert_owner()
@@ -72,6 +80,44 @@ class CoreRuntime:
             else:
                 queue.put_nowait(event.model_copy(update={"correlation_id": hello_id}))
         return event
+
+    def publish(self, event: ProtocolEvent) -> None:
+        self._assert_owner()
+        if self.stopping:
+            raise RuntimeError("Core is stopping")
+        for queue, hello_id in tuple(self._subscriptions.items()):
+            if queue.full():
+                del self._subscriptions[queue]
+                while not queue.empty():
+                    queue.get_nowait()
+                queue.put_nowait(None)
+            else:
+                queue.put_nowait(event.model_copy(update={"correlation_id": hello_id}))
+
+    def publish_transcript(self, operation_id: UUID, response: SpeechToTextResponse) -> None:
+        self.publish(
+            new_event(
+                "audio.transcript.final",
+                AudioTranscriptFinalPayload(
+                    operation_id=operation_id,
+                    text=response.transcript,
+                    language="pl",
+                    duration_ms=response.duration_ms,
+                ),
+            )
+        )
+
+    def publish_placeholder_response(self, operation_id: UUID, text: str) -> None:
+        self.publish(
+            new_event(
+                "assistant.response.completed",
+                AssistantResponseCompletedPayload(
+                    operation_id=operation_id,
+                    text=text,
+                    kind="milestone_3_placeholder",
+                ),
+            )
+        )
 
     async def shutdown(self) -> None:
         self._assert_owner()

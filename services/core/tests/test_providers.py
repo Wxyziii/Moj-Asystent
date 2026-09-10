@@ -1,5 +1,6 @@
 import pytest
 
+from moj_asystent_core.audio import PcmFrame
 from moj_asystent_core.providers import (
     LanguageModelProvider,
     LanguageModelRequest,
@@ -13,7 +14,6 @@ from moj_asystent_core.providers import (
     TextToSpeechProvider,
     TextToSpeechRequest,
     WakeWordProvider,
-    WakeWordRequest,
 )
 
 
@@ -30,8 +30,15 @@ async def test_stubs_substitute_at_the_real_provider_interfaces() -> None:
     with pytest.raises(ProviderUnavailableError):
         await llm.generate(LanguageModelRequest(prompt="test"))
     with pytest.raises(ProviderUnavailableError):
-        await stt.transcribe(SpeechToTextRequest(audio_reference="in-memory"))
+        await stt.transcribe(
+            SpeechToTextRequest(
+                pcm_s16le=b"\0\0" * 160,
+                sample_rate=16_000,
+                language="pl",
+                duration_ms=10,
+            )
+        )
     with pytest.raises(ProviderUnavailableError):
-        await tts.synthesize(TextToSpeechRequest(text="test"))
+        await tts.speak(TextToSpeechRequest(text="test", language="pl"))
     with pytest.raises(ProviderUnavailableError):
-        await wake.detect(WakeWordRequest(audio_reference="in-memory"))
+        await wake.score(PcmFrame(pcm_s16le=b"\0\0" * 160, sample_rate=16_000))

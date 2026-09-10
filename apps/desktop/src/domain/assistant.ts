@@ -34,12 +34,12 @@ export const assistantStateDefinitions: Record<
     compactMode: true,
   },
   thinking: {
-    label: "Przygotowuję odpowiedź…",
-    detail: "To tylko symulacja interfejsu",
+    label: "Myślę…",
+    detail: "Przygotowuję odpowiedź lokalnie",
     tone: "working",
   },
   speaking: {
-    label: "Odpowiadam…",
+    label: "Mówię…",
     detail: "Możesz przerwać w dowolnym momencie",
     tone: "speaking",
   },

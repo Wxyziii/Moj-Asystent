@@ -132,6 +132,8 @@ V1 local-first.
 - future integrations use scoped credentials and OS credential storage;
 - secrets never committed to repository or SQLite in plaintext when avoidable.
 
+The desktop/core voice boundary additionally requires a per-launch random credential. Tauri passes it directly to the owned core process, and the core validates it before health responses, audio-control requests or WebSocket acceptance. Credentials are memory-only, omitted from logs and invalid after application restart. HTTP and WebSocket remain restricted to loopback hosts and known desktop origins, with strict payload-size and schema validation. This limits accidental cross-origin/local access; it does not defend against a malicious process with access to the same user's process memory.
+
 ## Logs
 
 Do log:
