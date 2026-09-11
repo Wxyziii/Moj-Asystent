@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "System diagnostics",
-    "status": "Milestone 9 complete — request-driven local telemetry",
+    "stage": "Memory and routines",
+    "status": "Milestone 10 complete — explicit local SQLite memory",
     "updated": "2026-09-11"
   },
   "principles": [
@@ -89,8 +89,8 @@
     {
       "id": 10,
       "name": "Memory & routines",
-      "status": "planned",
-      "description": "SQLite memory, aliases, preferences and reusable routines."
+      "status": "done",
+      "description": "Versioned local SQLite memory, aliases, preferences, privacy controls and reusable typed routines."
     },
     {
       "id": 11,
@@ -106,6 +106,16 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "title": "Milestone 10: local memory and routines",
+      "items": [
+        "Added versioned local SQLite persistence for explicit memories, preferences, aliases and opt-in completed conversation history.",
+        "Added deterministic bounded retrieval, secret-like value rejection and Polish settings controls for review, deletion and reset.",
+        "Added typed routine create/list/inspect/run/rename/delete APIs that reuse the existing permission and confirmation engine, plus confirmed create_routine proposals from explicit Polish requests.",
+        "Kept embeddings, automatic memory extraction, watchers and proactive behavior out of scope."
+      ]
+    },
     {
       "date": "2026-09-11",
       "title": "Milestone 9: system diagnostics",

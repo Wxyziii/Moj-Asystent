@@ -12,6 +12,22 @@ from uuid import UUID
 from pydantic import BaseModel, ValidationError
 
 from ..context import ActiveWindowSnapshot, DesktopContextSnapshot
+from ..memory import (
+    AliasLookupOutput,
+    AliasOutput,
+    CreateRoutineArguments,
+    ForgetMemoryArguments,
+    ListMemoriesArguments,
+    MemoryDeleteOutput,
+    MemoryListOutput,
+    MemoryWriteOutput,
+    RememberAliasArguments,
+    RememberMemoryArguments,
+    RememberPreferenceArguments,
+    ResolveAliasArguments,
+    RoutineWriteOutput,
+    SQLiteMemoryStore,
+)
 from ..telemetry import TelemetrySnapshot
 from ..vision import VisionCaptureOutcome, VisionImage, VisionInspectionResult
 from .confirmations import ConfirmationManager, ConfirmationRejected, ConfirmationRequest
@@ -379,9 +395,10 @@ def build_tool_engine(
     policy_path: Path | None = None,
     path_roots: tuple[Path, ...] | None = None,
     platform: WindowsToolPlatform | None = None,
+    memory_store: SQLiteMemoryStore | None = None,
 ) -> ToolEngine:
     resolved_platform = platform or WindowsToolPlatform(path_policy=PathPolicy(path_roots))
-    registry = ToolRegistry(_definitions(resolved_platform))
+    registry = ToolRegistry(_definitions(resolved_platform, memory_store))
     return ToolEngine(
         registry,
         PermissionPolicyStore(policy_path),
@@ -391,7 +408,9 @@ def build_tool_engine(
     )
 
 
-def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
+def _definitions(
+    platform: WindowsToolPlatform, memory_store: SQLiteMemoryStore | None = None
+) -> tuple[ToolDefinition, ...]:
     def definition(
         name: str,
         description: str,
@@ -444,7 +463,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
     def unavailable_vision_implementation(_: BaseModel) -> BaseModel:
         raise RuntimeError("Vision requires operation context")
 
-    return (
+    definitions = (
         definition(
             "get_system_stats",
             "Pobierz świeży, ograniczony raport CPU, RAM, dysków, sieci, GPU i procesów.",
@@ -675,6 +694,135 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             action="Wyłączyć komputer?",
             target=lambda _: "Windows",
             risk="Wszystkie aplikacje zostaną zamknięte; niezapisana praca może zostać utracona.",
+        ),
+    )
+    if memory_store is None:
+        return definitions
+
+    def resolve_alias_output(value: BaseModel) -> AliasLookupOutput:
+        arguments = cast(ResolveAliasArguments, value)
+        alias = memory_store.resolve_alias(arguments.alias, kind=arguments.kind)
+        return AliasLookupOutput(found=alias is not None, alias=alias)
+
+    def create_routine_output(value: BaseModel) -> RoutineWriteOutput:
+        arguments = cast(CreateRoutineArguments, value)
+        known = {item.name: item for item in definitions}
+        for step in arguments.steps:
+            definition_item = known.get(step.tool_name)
+            if definition_item is None:
+                raise ValueError("Routine contains an unknown tool")
+            definition_item.input_model.model_validate(step.arguments)
+        return RoutineWriteOutput(
+            routine=memory_store.create_routine(
+                arguments.name, arguments.steps, description=arguments.description
+            )
+        )
+
+    return definitions + (
+        definition(
+            "remember_preference",
+            "Zapisz wyraźnie zaakceptowaną preferencję użytkownika. Wymaga jawnej prośby.",
+            RememberPreferenceArguments,
+            MemoryWriteOutput,
+            PermissionLevel.SENSITIVE,
+            lambda value: MemoryWriteOutput(
+                memory=memory_store.remember_preference(
+                    cast(RememberPreferenceArguments, value).key,
+                    cast(RememberPreferenceArguments, value).value,
+                )
+            ),
+            category="memory.sensitive",
+            action="Zapisać tę preferencję?",
+            target=lambda value: cast(RememberPreferenceArguments, value).key,
+            risk="Preferencja zostanie zapisana lokalnie i będzie używana w przyszłych rozmowach.",
+        ),
+        definition(
+            "create_routine",
+            "Zaproponuj i zapisz rutynę jako krótką, uporządkowaną listę istniejących narzędzi. "
+            "Wymaga jawnej prośby i potwierdzenia użytkownika.",
+            CreateRoutineArguments,
+            RoutineWriteOutput,
+            PermissionLevel.SENSITIVE,
+            create_routine_output,
+            category="routine.sensitive",
+            action="Zapisać tę rutynę?",
+            target=lambda value: cast(CreateRoutineArguments, value).name,
+            risk="Rutyna zostanie zapisana lokalnie i zachowa osobne uprawnienia każdego kroku.",
+        ),
+        definition(
+            "remember_memory",
+            "Zapisz wyraźnie zaakceptowaną informację użytkownika. Wymaga jawnej prośby.",
+            RememberMemoryArguments,
+            MemoryWriteOutput,
+            PermissionLevel.SENSITIVE,
+            lambda value: MemoryWriteOutput(
+                memory=memory_store.create_memory(
+                    cast(RememberMemoryArguments, value).key,
+                    cast(RememberMemoryArguments, value).value,
+                )
+            ),
+            category="memory.sensitive",
+            action="Zapisać tę informację?",
+            target=lambda value: cast(RememberMemoryArguments, value).key,
+            risk="Informacja zostanie zapisana lokalnie i będzie używana w przyszłych rozmowach.",
+        ),
+        definition(
+            "remember_alias",
+            "Zapisz lokalny alias aplikacji albo projektu po jawnej prośbie użytkownika.",
+            RememberAliasArguments,
+            AliasOutput,
+            PermissionLevel.SENSITIVE,
+            lambda value: AliasOutput(
+                alias=memory_store.save_alias(
+                    cast(RememberAliasArguments, value).kind,
+                    cast(RememberAliasArguments, value).alias,
+                    cast(RememberAliasArguments, value).target,
+                    overwrite=cast(RememberAliasArguments, value).overwrite,
+                )
+            ),
+            category="memory.sensitive",
+            action="Zapisać ten alias?",
+            target=lambda value: cast(RememberAliasArguments, value).alias,
+            risk=(
+                "Alias zostanie zapisany lokalnie; istniejący alias nie zostanie "
+                "zastąpiony bez wyraźnego overwrite."
+            ),
+        ),
+        definition(
+            "list_memories",
+            "Pokaż ograniczoną listę zapisanych, zatwierdzonych informacji użytkownika.",
+            ListMemoriesArguments,
+            MemoryListOutput,
+            PermissionLevel.READ,
+            lambda value: MemoryListOutput(
+                memories=memory_store.list_memories(limit=cast(ListMemoriesArguments, value).limit)
+            ),
+            category="memory.read",
+            action="Wyświetlić zapamiętane informacje?",
+        ),
+        definition(
+            "forget_memory",
+            "Usuń jedną zapisaną informację po wskazaniu jej identyfikatora.",
+            ForgetMemoryArguments,
+            MemoryDeleteOutput,
+            PermissionLevel.SENSITIVE,
+            lambda value: MemoryDeleteOutput(
+                removed=memory_store.delete_memory(cast(ForgetMemoryArguments, value).memory_id)
+            ),
+            category="memory.sensitive",
+            action="Usunąć tę zapamiętaną informację?",
+            target=lambda value: str(cast(ForgetMemoryArguments, value).memory_id),
+            risk="Ta zapamiętana informacja zostanie trwale usunięta.",
+        ),
+        definition(
+            "resolve_alias",
+            "Rozwiąż zapisany alias aplikacji lub projektu bez wykonywania żadnej akcji.",
+            ResolveAliasArguments,
+            AliasLookupOutput,
+            PermissionLevel.READ,
+            resolve_alias_output,
+            category="memory.read",
+            action="Odczytać alias?",
         ),
     )
 

@@ -679,6 +679,104 @@ button:disabled {
   font-family: inherit;
   font-size: 10px;
 }
+.memory-settings {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.memory-settings__heading,
+.memory-settings__toggle,
+.memory-list__item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.memory-settings__heading > div,
+.memory-settings__toggle > span,
+.memory-list__item > span {
+  min-width: 0;
+  flex: 1;
+}
+.memory-settings__heading strong,
+.memory-settings__heading small,
+.memory-settings__toggle strong,
+.memory-settings__toggle small,
+.memory-list__item strong,
+.memory-list__item small {
+  display: block;
+}
+.memory-settings__heading small,
+.memory-settings__toggle small,
+.memory-list__item small,
+.memory-settings__muted {
+  margin-top: 3px;
+  color: #a1a1a8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.memory-settings__toggle {
+  margin-top: 15px;
+  padding: 11px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+.memory-settings__toggle input {
+  width: 34px;
+  height: 20px;
+  accent-color: #f5f5f7;
+}
+.memory-list {
+  margin-top: 4px;
+}
+.memory-list__item {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.memory-list__item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #c6c6cc;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+.icon-button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.memory-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.memory-settings__actions button {
+  padding: 8px 10px;
+  color: #c6c6cc;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  font-size: 11px;
+}
+.memory-settings__actions button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.memory-settings__error {
+  margin: 12px 0 0;
+  color: #ffb4ad;
+  font-size: 11px;
+}
 
 @media (max-width: 420px) {
   .health-chip {

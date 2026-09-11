@@ -2,17 +2,35 @@ import {
   ArrowLeft,
   Check,
   ChevronRight,
+  Database,
   Keyboard,
   MonitorUp,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
   Volume2,
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import type { CoreConnectionStatus } from "../lib/coreClient";
+import {
+  clearHistory,
+  clearMemories,
+  deleteAlias,
+  deleteMemory,
+  getMemorySettings,
+  listAliases,
+  listMemories,
+  setHistoryRetention,
+  type AliasRecord,
+  type MemoryRecord,
+} from "../lib/memoryClient";
 
 interface SettingsShellProps {
   onBack: () => void;
   onWakeSettings: () => void;
   assistantName?: string;
+  credential?: string;
+  coreStatus: CoreConnectionStatus;
 }
 
 interface SettingsSection {
@@ -42,7 +60,14 @@ export function SettingsShell({
   onBack,
   onWakeSettings,
   assistantName,
+  credential,
+  coreStatus,
 }: SettingsShellProps) {
+  const [historyRetention, setHistoryRetentionState] = useState(false);
+  const [memories, setMemories] = useState<MemoryRecord[]>([]);
+  const [aliases, setAliases] = useState<AliasRecord[]>([]);
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const [memoryError, setMemoryError] = useState<string>();
   const sections: SettingsSection[] = [
     {
       icon: SlidersHorizontal,
@@ -62,6 +87,132 @@ export function SettingsShell({
     },
     ...baseSections,
   ];
+
+  const refreshMemory = useCallback(async () => {
+    if (!credential || coreStatus !== "connected") return;
+    setMemoryBusy(true);
+    setMemoryError(undefined);
+    try {
+      const [settings, records, aliasRecords] = await Promise.all([
+        getMemorySettings(credential),
+        listMemories(credential),
+        listAliases(credential),
+      ]);
+      setHistoryRetentionState(settings.history_retention);
+      setMemories(records);
+      setAliases(aliasRecords);
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się odczytać pamięci.",
+      );
+    } finally {
+      setMemoryBusy(false);
+    }
+  }, [coreStatus, credential]);
+
+  useEffect(() => {
+    void refreshMemory();
+  }, [refreshMemory]);
+
+  const toggleHistory = async () => {
+    if (!credential || memoryBusy) return;
+    const next = !historyRetention;
+    setHistoryRetentionState(next);
+    setMemoryBusy(true);
+    setMemoryError(undefined);
+    try {
+      await setHistoryRetention(credential, next);
+    } catch (error) {
+      setHistoryRetentionState(!next);
+      setMemoryError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zmienić ustawienia historii.",
+      );
+    } finally {
+      setMemoryBusy(false);
+    }
+  };
+
+  const removeMemory = async (memoryId: string) => {
+    if (!credential || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      if (await deleteMemory(credential, memoryId))
+        setMemories((current) =>
+          current.filter((item) => item.memory_id !== memoryId),
+        );
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error ? error.message : "Nie udało się usunąć wpisu.",
+      );
+    } finally {
+      setMemoryBusy(false);
+    }
+  };
+
+  const removeAlias = async (aliasId: string) => {
+    if (!credential || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      if (await deleteAlias(credential, aliasId))
+        setAliases((current) =>
+          current.filter((item) => item.alias_id !== aliasId),
+        );
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error ? error.message : "Nie udało się usunąć aliasu.",
+      );
+    } finally {
+      setMemoryBusy(false);
+    }
+  };
+
+  const clearHistoryClick = async () => {
+    if (
+      !credential ||
+      memoryBusy ||
+      !window.confirm("Usunąć zapisaną historię rozmów?")
+    )
+      return;
+    setMemoryBusy(true);
+    try {
+      await clearHistory(credential);
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się wyczyścić historii.",
+      );
+    } finally {
+      setMemoryBusy(false);
+    }
+  };
+
+  const clearMemoryClick = async () => {
+    if (
+      !credential ||
+      memoryBusy ||
+      !window.confirm("Usunąć wszystkie pamięci i aliasy?")
+    )
+      return;
+    setMemoryBusy(true);
+    try {
+      await clearMemories(credential);
+      setMemories([]);
+      setAliases([]);
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się wyczyścić pamięci.",
+      );
+    } finally {
+      setMemoryBusy(false);
+    }
+  };
   return (
     <main className="settings overlay-surface" aria-label="Ustawienia">
       <header className="settings__header drag-region" data-tauri-drag-region>
@@ -101,6 +252,109 @@ export function SettingsShell({
               <ChevronRight size={18} className="settings-row__chevron" />
             </button>
           ))}
+        </section>
+        <section className="memory-settings" aria-label="Pamięć lokalna">
+          <div className="memory-settings__heading">
+            <span className="settings-row__icon">
+              <Database size={19} />
+            </span>
+            <div>
+              <strong>Pamięć lokalna</strong>
+              <small>
+                Tylko jawnie zapisane informacje, na tym komputerze.
+              </small>
+            </div>
+          </div>
+          {coreStatus !== "connected" ? (
+            <p className="memory-settings__muted">
+              Połącz rdzeń, aby zarządzać pamięcią.
+            </p>
+          ) : (
+            <>
+              <label className="memory-settings__toggle">
+                <span>
+                  <strong>Historia rozmów</strong>
+                  <small>Zapisuje ukończone wiadomości, nigdy nagrania.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={historyRetention}
+                  onChange={() => void toggleHistory()}
+                  disabled={memoryBusy}
+                />
+              </label>
+              {memories.length > 0 ? (
+                <div className="memory-list">
+                  {memories.map((memory) => (
+                    <div
+                      className="memory-list__item"
+                      key={`${memory.category}:${memory.memory_id}:${memory.key}`}
+                    >
+                      <span>
+                        <strong>{memory.key}</strong>
+                        <small>{memory.value}</small>
+                      </span>
+                      {memory.category === "memory" ? (
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Usuń ${memory.key}`}
+                          onClick={() => void removeMemory(memory.memory_id)}
+                          disabled={memoryBusy}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="memory-settings__muted">
+                  Nie zapisano jeszcze żadnych informacji.
+                </p>
+              )}
+              {aliases.length > 0 ? (
+                <div className="memory-list" aria-label="Zapisane aliasy">
+                  {aliases.map((alias) => (
+                    <div className="memory-list__item" key={alias.alias_id}>
+                      <span>
+                        <strong>{alias.alias}</strong>
+                        <small>{alias.target}</small>
+                      </span>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={`Usuń alias ${alias.alias}`}
+                        onClick={() => void removeAlias(alias.alias_id)}
+                        disabled={memoryBusy}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="memory-settings__actions">
+                <button
+                  type="button"
+                  onClick={() => void clearHistoryClick()}
+                  disabled={memoryBusy}
+                >
+                  Wyczyść historię
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void clearMemoryClick()}
+                  disabled={memoryBusy}
+                >
+                  Wyczyść pamięć i aliasy
+                </button>
+              </div>
+              {memoryError ? (
+                <p className="memory-settings__error">{memoryError}</p>
+              ) : null}
+            </>
+          )}
         </section>
         <section className="shortcut-note">
           <Keyboard size={18} />

@@ -221,6 +221,21 @@ Decision: begin with SQLite structured state and explicit retrieval.
 
 Do not add a vector DB/embedding system until there is a demonstrated semantic-retrieval need.
 
+## 2026-09-11 — Milestone 10 local persistence boundary
+
+Decision: use a versioned SQLite database under per-user application data for
+explicit preferences, memories, aliases, opt-in completed conversation history
+and bounded typed routines. Open a short-lived connection per operation with
+WAL, foreign keys and a fail-closed migration path. Retrieval remains
+deterministic and bounded; durable extraction, embeddings and watchers remain
+out of scope.
+
+The existing validated permissions JSON remains separate from SQLite. Policy
+writes have independent fail-closed semantics and should not be removed by a
+user's memory reset. Routines call the central tool engine rather than adding
+a second execution path, so existing validation, policy, confirmation and
+cancellation guarantees remain authoritative.
+
 ## 2026-09-09 — Proactive behavior must be event-driven
 
 Decision: background watchers use deterministic OS/process/file/resource events and invoke AI only when interpretation is needed.

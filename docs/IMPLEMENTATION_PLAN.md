@@ -353,6 +353,12 @@ SQLite tables for:
 
 Start with explicit structured memory. Add embeddings/vector search only when there is a proven retrieval need.
 
+Milestone 10 keeps the existing validated permissions policy in its separate
+local JSON store and intentionally defers watcher registration and event
+history to Milestone 11. This phase persists only completed conversation
+messages when the user opts in; audio, screenshots and model prompts remain
+ephemeral.
+
 ## Exit criteria
 
 The assistant can remember user-approved aliases/preferences and execute named routines without stuffing full history into every prompt.

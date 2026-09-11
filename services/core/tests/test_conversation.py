@@ -5,6 +5,7 @@ import pytest
 
 from moj_asystent_core.conversation import LocalConversationService, concise_spoken_response
 from moj_asystent_core.llm import LanguageModelRequest, ModelStatus, ModelTextDelta
+from moj_asystent_core.memory import SQLiteMemoryStore
 from moj_asystent_core.runtime import CoreRuntime
 
 
@@ -107,5 +108,47 @@ async def test_cancelled_generation_is_not_remembered() -> None:
     contents = [message.content for message in provider.requests[1].messages]
     assert "porzucone pytanie" not in contents
     assert "niedokończona część" not in contents
+    await service.close()
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_generation_is_not_persisted(tmp_path) -> None:
+    store = SQLiteMemoryStore(tmp_path / "memory.sqlite3")
+    store.set_history_retention(True)
+    runtime = CoreRuntime()
+    provider = CancellableLanguageModel()
+    service = LocalConversationService(runtime, provider, memory_store=store)
+    task = asyncio.create_task(service.respond(uuid4(), "przerwane", mode="text"))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert store.conversation_messages(service._conversation_id) == ()
+    await service.close()
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_completed_turn_persists_only_when_history_is_enabled(tmp_path) -> None:
+    store = SQLiteMemoryStore(tmp_path / "memory.sqlite3")
+    store.set_history_retention(True)
+    runtime = CoreRuntime()
+    provider = FakeLanguageModel()
+    service = LocalConversationService(runtime, provider, memory_store=store)
+
+    await service.respond(uuid4(), "Zapisz to pytanie", mode="text")
+    messages = store.conversation_messages(service._conversation_id)
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+
+    store.set_history_retention(False)
+    provider.chunks = ["Bez zapisu."]
+    await service.respond(uuid4(), "Tego nie zapisuj", mode="text")
+    messages = store.conversation_messages(service._conversation_id)
+    assert [message["content"] for message in messages] == [
+        "Zapisz to pytanie",
+        "Pierwsze zdanie. Drugie zdanie. Trzecie zdanie.",
+    ]
     await service.close()
     await runtime.shutdown()

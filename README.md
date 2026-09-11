@@ -2,7 +2,7 @@
 
 A local-first, Polish-only desktop AI assistant for Windows with voice activation, an overlay chat interface, screen awareness, system telemetry, memory, and controlled tool execution.
 
-> Project status: **Milestone 9 complete — local system diagnostics**
+> Project status: **Milestone 10 complete — local memory and routines**
 
 ## Product goal
 
@@ -61,6 +61,7 @@ Start here:
 - [`docs/OVERLAY_UI.md`](docs/OVERLAY_UI.md) — overlay UX specification
 - [`docs/SECURITY.md`](docs/SECURITY.md) — permissions and safety boundaries
 - [`docs/SYSTEM_DIAGNOSTICS.md`](docs/SYSTEM_DIAGNOSTICS.md) — bounded local telemetry and diagnostic facts
+- [`docs/MEMORY_AND_ROUTINES.md`](docs/MEMORY_AND_ROUTINES.md) — local persistence, privacy controls and typed routines
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones and release scope
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — architectural decision log
 - [`CHANGELOG.md`](CHANGELOG.md) — project changes
@@ -73,9 +74,9 @@ The deployment workflow is in `.github/workflows/pages.yml`.
 
 ## Status
 
-Milestones 1–9 are implemented: the Windows overlay, authenticated local core,
+Milestones 1–10 are implemented: the Windows overlay, authenticated local core,
 Polish audio pipeline, trained custom wake name, local streamed Qwen chat, the
 typed tool/permission boundary and request-scoped active-window/UI Automation
-context, selective local vision and request-driven system diagnostics. Persistent
-memory and proactive watchers remain later milestones. See `docs/ROADMAP.md` for
-the exact scope.
+context, selective local vision, request-driven system diagnostics and explicit
+local SQLite memory/routines. Proactive watchers remain a later milestone. See
+`docs/ROADMAP.md` for the exact scope.

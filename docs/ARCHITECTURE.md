@@ -234,16 +234,29 @@ This prevents continuous LLM/vision use.
 
 ### 10. Persistence
 
-SQLite stores structured state:
+Milestone 10 adds a versioned local SQLite store for structured state:
 
 - settings;
-- permissions;
-- conversation metadata;
+- completed conversation metadata and messages (opt-in retention);
 - user-approved memories;
+- preferences;
 - aliases;
 - routines;
-- watchers;
-- action/audit history.
+
+The store lives under the user's local application-data directory, uses a
+short-lived connection per operation with WAL and foreign keys, and refuses
+unknown schema versions or corrupt data without wiping it. The existing
+validated permissions JSON remains a separate store because permission writes
+have different fail-closed semantics from user-facing memory deletion. No
+watchers, embeddings, vector database or durable telemetry are included in
+this milestone.
+
+Durable writes are explicit and bounded. Retrieval is deterministic and
+inserts at most eight approved, non-expired records (4 KiB) into a clearly
+labelled untrusted model context. Routine steps reuse the central tool engine
+and therefore cannot bypass validation, policy or confirmation. The local model
+may propose a `create_routine` call for an explicit Polish request, but the
+typed backend revalidates each step and treats persistence as sensitive.
 
 Screenshots, microphone recordings and model prompts containing sensitive context should not be retained by default.
 

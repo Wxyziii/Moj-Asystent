@@ -186,6 +186,11 @@ Later phase:
 - editable/deleteable stored memory through settings;
 - no screenshot/audio storage by default.
 
+Milestone 10 provides explicit local SQLite storage with opt-in completed
+conversation history, bounded deterministic retrieval, secret-like value
+rejection and separate review/delete/reset controls. Watcher definitions and
+event history remain future work.
+
 Start structured; add embeddings only if needed.
 
 ## 13. Routines
@@ -204,6 +209,11 @@ A routine may:
 - change known system settings;
 - arrange windows later;
 - start approved services/processes.
+
+Milestone 10 routines are bounded ordered lists of existing typed tools. They
+support create, list, inspect, run, rename and delete through the authenticated
+core API; each step retains its own policy, confirmation and cancellation
+requirements. Loops, conditions and arbitrary scripts are not supported.
 
 ## 14. AI model router
 

@@ -119,6 +119,8 @@ function AssistantApp() {
     return (
       <SettingsShell
         assistantName={assistantName}
+        credential={credential}
+        coreStatus={coreStatus}
         onWakeSettings={() => {
           setShowOnboarding(true);
           void requestDesktopMode("settings");

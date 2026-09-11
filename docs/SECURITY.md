@@ -175,6 +175,12 @@ cannot grant permission or trigger a tool.
 - settings UI must allow review/removal/reset;
 - sensitive raw context such as screenshots/audio should not become memory automatically;
 - separate session context from durable memory.
+- history retention is off by default and stores only completed user/assistant turns;
+- credential-shaped keys/values are rejected before persistence;
+- SQLite schema versions, foreign keys, parameterized queries and bounded values fail closed on corruption or newer versions;
+- retrieved records are bounded and marked as untrusted data in the model prompt;
+- aliases resolve data only and cannot bypass canonical path/application policy;
+- routines reuse every normal tool validation, permission, confirmation and cancellation check.
 
 ## Network
 

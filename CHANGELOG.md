@@ -6,6 +6,16 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 10 local persistence: versioned SQLite schema for explicit
+  preferences, memories, aliases, opt-in completed conversation history and
+  bounded typed routines.
+- Deterministic, bounded memory retrieval with secret-like value rejection,
+  review/delete/reset controls in the Polish desktop settings and routine CRUD
+  execution through the existing tool/permission engine; explicit Polish
+  routine requests can propose a confirmed typed `create_routine` call.
+- Regression coverage for migration/corruption handling, persistence across
+  reopen, API validation, routine cancellation and normalization invariants.
+
 - Milestone 9 request-driven system diagnostics through the typed `get_system_stats` tool: bounded CPU/RAM/volume/network measurements, optional NVIDIA NVML GPU/VRAM/temperature/power data, process correlation and deterministic diagnostic facts.
 - Two-sample rate normalization with explicit counter-reset/unavailable semantics, privacy-safe process names, cancellable captures and a twelve-snapshot/sixty-second in-memory history.
 - Deterministic diagnostic-question routing and a localized desktop activity label for CPU/RAM/GPU checks; persistent memory and watcher work remain postponed.

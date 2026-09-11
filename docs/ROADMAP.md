@@ -218,13 +218,24 @@ Completed scope:
 
 ## Milestone 10 — Memory/routines
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
 - SQLite schema;
 - structured memories, aliases and routines;
 - permission persistence and history controls.
+
+Completed scope:
+
+- versioned local SQLite persistence with explicit migrations, WAL, bounded
+  values and fail-closed corruption handling;
+- opt-in completed conversation history, reviewable preferences/memories,
+  secret-like value rejection and deterministic bounded retrieval;
+- normalized app/project aliases with explicit overwrite and a desktop privacy
+  settings panel for history and memory reset controls;
+- typed routine CRUD and bounded execution through the existing permission and
+  confirmation engine, including cancellation and shutdown cleanup.
 
 ## Milestone 11 — Watchers/proactive assistance
 

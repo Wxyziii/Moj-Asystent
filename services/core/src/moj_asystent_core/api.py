@@ -14,7 +14,15 @@ from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import Base64Bytes, BaseModel, ConfigDict, Field, StrictInt, field_validator
+from pydantic import (
+    Base64Bytes,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    field_validator,
+)
 
 from .audio import AudioConfig, AudioPipeline, PcmFrame
 from .audio_providers import (
@@ -35,6 +43,19 @@ from .llm import (
     OllamaLanguageModelProvider,
 )
 from .local_boundary import LocalHostMiddleware
+from .memory import (
+    AliasRecord,
+    MemoryRecord,
+    MemoryStoreBusyError,
+    MemoryStoreCorruptError,
+    MemoryStoreError,
+    MemoryValidationError,
+    RoutineRecord,
+    RoutineStep,
+    RoutineSummary,
+    SQLiteMemoryStore,
+    default_memory_database_path,
+)
 from .protocol import (
     PROTOCOL_VERSION,
     ClientHello,
@@ -45,6 +66,7 @@ from .protocol import (
     new_event,
     parse_event,
 )
+from .routines import RoutineCreateRequest, RoutineService, RoutineValidationError
 from .runtime import CoreRuntime
 from .tools import ToolEngine, build_tool_engine
 from .tools.confirmations import ConfirmationRejected
@@ -148,6 +170,36 @@ class RegionCaptureResponse(BaseModel):
     preview_data_url: str | None = Field(default=None, max_length=140_000)
 
 
+class MemorySettingRequest(StrictRequest):
+    enabled: StrictBool
+
+
+class MemoryWriteRequest(StrictRequest):
+    key: str = Field(min_length=1, max_length=96)
+    value: str = Field(min_length=1, max_length=2_048)
+
+
+class AliasWriteRequest(StrictRequest):
+    kind: Literal["app", "project"]
+    alias: str = Field(min_length=1, max_length=96)
+    target: str = Field(min_length=1, max_length=1_024)
+    overwrite: StrictBool = False
+
+
+class MemoryClearRequest(StrictRequest):
+    confirm: Literal[True]
+
+
+class RoutineWriteRequest(StrictRequest):
+    name: str = Field(min_length=1, max_length=96)
+    description: str | None = Field(default=None, max_length=512)
+    steps: tuple[RoutineStep, ...] = Field(min_length=1, max_length=16)
+
+
+class RoutineRenameRequest(StrictRequest):
+    name: str = Field(min_length=1, max_length=96)
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     host: str = "127.0.0.1"
@@ -164,6 +216,7 @@ class CoreSettings:
     ollama_url: str = DEFAULT_OLLAMA_URL
     llm_model: str = DEFAULT_MODEL
     permission_policy_path: Path = field(default_factory=default_policy_path)
+    memory_database_path: Path = field(default_factory=default_memory_database_path)
     context: ContextSettings = field(default_factory=ContextSettings)
     vision: VisionSettings = field(default_factory=VisionSettings)
 
@@ -200,13 +253,23 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         vision_settings=app.state.settings.vision,
     )
     app.state.tool_platform = tool_platform
+    owns_memory_store = app.state.memory_store is None
+    memory_store = app.state.memory_store or SQLiteMemoryStore(
+        app.state.settings.memory_database_path
+    )
+    app.state.memory_store = memory_store
     tool_engine: ToolEngine = build_tool_engine(
         runtime,
         policy_path=app.state.settings.permission_policy_path,
         platform=tool_platform,
+        memory_store=memory_store,
     )
     app.state.tool_engine = tool_engine
-    conversation = LocalConversationService(runtime, provider, tool_engine=tool_engine)
+    conversation = LocalConversationService(
+        runtime, provider, tool_engine=tool_engine, memory_store=memory_store
+    )
+    routine_service = RoutineService(memory_store, tool_engine)
+    app.state.routine_service = routine_service
     vision_store = PendingVisionStore()
     chat = TextChatController(runtime, conversation, vision_store)
     app.state.vision_store = vision_store
@@ -242,12 +305,15 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await onboarding.shutdown()
+        await routine_service.shutdown()
         await chat.shutdown()
         await audio.shutdown()
         vision_store.close()
         tool_engine.shutdown()
         await conversation.close()
         await runtime.shutdown()
+        if owns_memory_store:
+            memory_store.close()
         logger.info("core_stopped")
 
 
@@ -255,6 +321,7 @@ def create_app(
     settings: CoreSettings | None = None,
     language_model_provider: LanguageModelProvider | None = None,
     tool_platform: WindowsToolPlatform | None = None,
+    memory_store: SQLiteMemoryStore | None = None,
 ) -> FastAPI:
     resolved = settings or CoreSettings()
     app = FastAPI(title="Mój Asystent Core", version=PROTOCOL_VERSION, lifespan=lifecycle)
@@ -263,6 +330,7 @@ def create_app(
         base_url=resolved.ollama_url, model=resolved.llm_model
     )
     app.state.tool_platform = tool_platform
+    app.state.memory_store = memory_store
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(ALLOWED_ORIGINS),
@@ -300,6 +368,27 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+    async def memory_call(function, *args, **kwargs):
+        try:
+            return await asyncio.to_thread(function, *args, **kwargs)
+        except MemoryValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except MemoryStoreBusyError as error:
+            raise HTTPException(
+                status_code=503, detail="Pamięć lokalna jest chwilowo zajęta."
+            ) from error
+        except (MemoryStoreCorruptError, MemoryStoreError) as error:
+            raise HTTPException(
+                status_code=503, detail="Pamięć lokalna jest niedostępna."
+            ) from error
+
+    def routine_error(error: Exception) -> HTTPException:
+        if isinstance(error, RoutineValidationError | MemoryValidationError):
+            return HTTPException(status_code=422, detail=str(error))
+        if isinstance(error, MemoryStoreBusyError):
+            return HTTPException(status_code=503, detail="Pamięć lokalna jest chwilowo zajęta.")
+        return HTTPException(status_code=503, detail="Pamięć lokalna jest niedostępna.")
+
     def public_metadata(metadata: WakeModelMetadata) -> dict[str, object]:
         return metadata.model_dump(mode="json", exclude={"model_path"})
 
@@ -324,6 +413,167 @@ def create_app(
     ) -> dict[str, object]:
         status = await app.state.conversation.refresh_status()
         return status.model_dump()
+
+    @app.get("/memory/settings")
+    async def memory_settings(_: Annotated[None, Depends(authorize)]) -> dict[str, bool]:
+        enabled = await memory_call(app.state.memory_store.history_retention_enabled)
+        return {"history_retention": enabled}
+
+    @app.patch("/memory/settings")
+    async def update_memory_settings(
+        request: MemorySettingRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        await memory_call(app.state.memory_store.set_history_retention, request.enabled)
+        return {"history_retention": request.enabled}
+
+    @app.get("/memories")
+    async def list_memories(
+        limit: int = 12,
+        _: Annotated[None, Depends(authorize)] = None,
+    ) -> dict[str, object]:
+        records: tuple[MemoryRecord, ...] = await memory_call(
+            app.state.memory_store.list_memories, limit=limit
+        )
+        return {"memories": [record.model_dump(mode="json") for record in records]}
+
+    @app.post("/memories")
+    async def create_memory(
+        request: MemoryWriteRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        record: MemoryRecord = await memory_call(
+            app.state.memory_store.create_memory, request.key, request.value
+        )
+        return record.model_dump(mode="json")
+
+    @app.delete("/memories/{memory_id}")
+    async def delete_memory(
+        memory_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        removed = await memory_call(app.state.memory_store.delete_memory, memory_id)
+        return {"removed": removed}
+
+    @app.post("/memory/clear")
+    async def clear_memories(
+        request: MemoryClearRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, int]:
+        removed = await memory_call(app.state.memory_store.clear_memories)
+        return {"removed": removed}
+
+    @app.delete("/history")
+    async def clear_history(_: Annotated[None, Depends(authorize)]) -> dict[str, int]:
+        removed = await memory_call(app.state.memory_store.clear_history)
+        return {"removed": removed}
+
+    @app.get("/aliases")
+    async def list_aliases(
+        kind: Literal["app", "project"] | None = None,
+        _: Annotated[None, Depends(authorize)] = None,
+    ) -> dict[str, object]:
+        aliases: tuple[AliasRecord, ...] = await memory_call(
+            app.state.memory_store.list_aliases, kind=kind
+        )
+        return {"aliases": [alias.model_dump(mode="json") for alias in aliases]}
+
+    @app.post("/aliases")
+    async def save_alias(
+        request: AliasWriteRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        alias: AliasRecord = await memory_call(
+            app.state.memory_store.save_alias,
+            request.kind,
+            request.alias,
+            request.target,
+            overwrite=request.overwrite,
+        )
+        return alias.model_dump(mode="json")
+
+    @app.delete("/aliases/{alias_id}")
+    async def delete_alias(
+        alias_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        removed = await memory_call(app.state.memory_store.delete_alias, alias_id)
+        return {"removed": removed}
+
+    @app.get("/routines")
+    async def list_routines(_: Annotated[None, Depends(authorize)]) -> dict[str, object]:
+        summaries: tuple[RoutineSummary, ...] = await memory_call(
+            app.state.memory_store.list_routines
+        )
+        return {"routines": [item.model_dump(mode="json") for item in summaries]}
+
+    @app.post("/routines/runs/{operation_id}/cancel")
+    async def cancel_routine(
+        operation_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        return {"cancelled": await app.state.routine_service.cancel(operation_id)}
+
+    @app.post("/routines")
+    async def create_routine(
+        request: RoutineWriteRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        try:
+            routine: RoutineRecord = await app.state.routine_service.create(
+                RoutineCreateRequest(
+                    name=request.name, description=request.description, steps=request.steps
+                )
+            )
+        except Exception as error:
+            raise routine_error(error) from error
+        return routine.model_dump(mode="json")
+
+    @app.get("/routines/{routine_id}")
+    async def inspect_routine(
+        routine_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        routine = await memory_call(app.state.memory_store.get_routine, routine_id)
+        if routine is None:
+            raise HTTPException(status_code=404, detail="Rutyna nie istnieje.")
+        return routine.model_dump(mode="json")
+
+    @app.patch("/routines/{routine_id}")
+    async def rename_routine(
+        routine_id: UUID,
+        request: RoutineRenameRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        try:
+            routine: RoutineRecord = await app.state.routine_service.rename(
+                routine_id, request.name
+            )
+        except Exception as error:
+            raise routine_error(error) from error
+        return routine.model_dump(mode="json")
+
+    @app.delete("/routines/{routine_id}")
+    async def delete_routine(
+        routine_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        try:
+            removed = await app.state.routine_service.delete(routine_id)
+        except Exception as error:
+            raise routine_error(error) from error
+        return {"removed": removed}
+
+    @app.post("/routines/{routine_id}/run")
+    async def run_routine(
+        routine_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ):
+        try:
+            result = await app.state.routine_service.run(routine_id)
+        except Exception as error:
+            raise routine_error(error) from error
+        return result.model_dump(mode="json")
 
     @app.post("/chat")
     async def chat(
