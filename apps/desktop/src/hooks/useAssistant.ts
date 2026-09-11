@@ -72,7 +72,9 @@ export function useAssistantUi() {
               ? "Analizuję obraz…"
               : event.payload.tool_name === "get_active_window"
                 ? "Analizuję aktywne okno…"
-                : undefined;
+                : event.payload.tool_name === "get_system_stats"
+                  ? "Sprawdzam użycie CPU, RAM i GPU…"
+                  : undefined;
         setToolActivity(
           contextActivity ??
             (event.payload.status === "executing"

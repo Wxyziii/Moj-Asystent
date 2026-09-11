@@ -26,6 +26,7 @@ dependencies = [
     "sounddevice>=0.5.6",
     "uvicorn>=0.52.4",
     "websockets>=17.1",
+    "nvidia-ml-py>=13.610.43",
 ]
 
 [project.scripts]

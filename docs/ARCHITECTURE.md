@@ -138,8 +138,9 @@ payload are bounded. Password controls are stripped, configured applications and
 title fragments are excluded before UI traversal, and raw context is neither
 persisted nor written to normal logs. See `WINDOWS_CONTEXT.md`.
 
-Screenshot capture and image-model input remain explicit Milestone 8 work. The
-current `inspect_screen` tool returns a truthful typed unavailable result.
+Screenshot capture and image-model input are implemented as the explicit,
+demand-driven Milestone 8 path. Captures remain bounded, ephemeral and subject
+to exclusion and foreground-staleness checks.
 
 ### 5. Orchestrator
 
@@ -197,8 +198,15 @@ Do not make `run_any_shell_command` a normal tool.
 The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation, call and tool identity under Protocol `1.3`.
 
 `get_active_window` and `read_ui_tree` use the Milestone 7 context provider.
-`inspect_screen` keeps its typed provider seam but reports unavailable until the
-Milestone 8 capture and vision path exists.
+`inspect_screen` uses the Milestone 8 bounded, demand-driven capture and vision
+provider; its image remains ephemeral and subject to the same exclusion and
+staleness checks.
+
+`get_system_stats` is the Milestone 9 request-scoped telemetry boundary. The
+core samples psutil counters twice, optionally reads NVIDIA NVML, normalizes
+bounded process/GPU correlations and returns explicit unavailable metrics. A
+short in-memory history is retained only for diagnostics; no background polling
+or durable telemetry store exists.
 
 ### 8. Permission engine
 
@@ -313,9 +321,10 @@ explicit/deep complex task -> larger llama.cpp hybrid tier
 
 Before loading a larger tier, check available VRAM/RAM and current gaming/high-load state.
 
-Milestone 5 implements only the normal conversation branch through the
-replaceable local Ollama provider. Tool selection, telemetry-aware routing and
-larger tiers remain assigned to their later milestones.
+Milestone 5 implements the normal conversation branch through the replaceable
+local Ollama provider. Milestone 9 adds deterministic routing for diagnostic
+questions so the model receives fresh telemetry before explaining a result.
+Hardware-aware larger-tier routing remains assigned to later milestones.
 
 ## Failure model
 

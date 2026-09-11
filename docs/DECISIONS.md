@@ -40,7 +40,19 @@ Confirmation tickets are unpredictable, expire after 90 seconds, are single-use 
 
 Reason: this preserves the rule that AI chooses what to propose, deterministic code controls how it is performed, and policy/user confirmation decides whether it may execute. It also prevents a compromised or malformed model response from manufacturing authorization or success.
 
-This file records product/architecture decisions that should not be silently changed.
+## 2026-09-11 — Request-driven bounded telemetry
+
+Decision: system diagnostics run only through the existing typed read-tool
+boundary. The core takes two short psutil samples and an optional NVML sample,
+normalizes them into a bounded immutable snapshot and retains at most twelve
+snapshots for sixty seconds in memory. Volume capacity and system-wide disk I/O
+are explicitly scoped; unavailable metrics and counter resets remain visible
+instead of being guessed. Process correlation is limited to PID/name, CPU, RSS,
+I/O and GPU VRAM, with no command lines or executable paths.
+
+Reason: this provides useful evidence for diagnostic questions without creating
+a background monitor, persistent telemetry database or a new UI/core protocol
+surface, and keeps OS observations separate from authorization and execution.
 
 ## 2026-09-09 — Polish-only V1
 

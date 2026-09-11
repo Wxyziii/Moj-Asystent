@@ -141,6 +141,20 @@ class LocalConversationService:
             )
             messages.append(_tool_message(call.name, result.model_dump(mode="json")))
             next_images = self._tool_engine.take_images(operation_id, call.call_id)
+        elif self._tool_engine is not None and _requires_telemetry(user_text):
+            call = ModelToolCall(
+                call_id=uuid4(),
+                name="get_system_stats",
+                arguments={},
+            )
+            messages.append(ChatMessage(role="assistant", content="", tool_calls=(call,)))
+            result = await self._tool_engine.execute(
+                operation_id=operation_id,
+                call_id=call.call_id,
+                tool_name=call.name,
+                arguments=call.arguments,
+            )
+            messages.append(_tool_message(call.name, result.model_dump(mode="json")))
         for iteration in range(MAX_TOOL_ITERATIONS + 1):
             text_chunks: list[str] = []
             tool_calls = []
@@ -343,6 +357,35 @@ def _requires_visual_capture(text: str) -> bool:
             "zaznaczon",
             "obraz",
             "wygląda",
+        )
+    )
+
+
+def _requires_telemetry(text: str) -> bool:
+    normalized = text.casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "cpu",
+            "procesor",
+            "ram",
+            "pamięć",
+            "dysk",
+            "gpu",
+            "kartę graficzną",
+            "temperatur",
+            "obciążeni",
+            "wydajność",
+            "zasoby",
+            "użycie komputera",
+            "statystyki systemu",
+            "laguje",
+            "lagi",
+            "zacina",
+            "klatki",
+            "fps",
+            "spowalnia",
+            "wolno działa",
         )
     )
 

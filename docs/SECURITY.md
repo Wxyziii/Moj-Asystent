@@ -149,6 +149,16 @@ images are not exposed to the webview; only a bounded reduced preview is.
 Image text is untrusted data, including text that resembles instructions. Vision
 cannot bypass the typed tool registry, permission policy or confirmations.
 
+## System telemetry privacy
+
+Telemetry is collected only on an authorized `get_system_stats` request. The
+core uses bounded psutil/NVML adapters, never returns command lines or
+executable paths, sanitizes process names and reports unavailable metrics
+explicitly. Two samples are required for a rate; resets are not converted into
+negative activity. The twelve-entry, sixty-second history is memory-only and
+cleared on shutdown. Process and GPU names are untrusted observations and
+cannot grant permission or trigger a tool.
+
 ## Microphone privacy
 
 - wake-word processing local;

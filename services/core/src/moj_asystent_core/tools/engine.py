@@ -12,6 +12,7 @@ from uuid import UUID
 from pydantic import BaseModel, ValidationError
 
 from ..context import ActiveWindowSnapshot, DesktopContextSnapshot
+from ..telemetry import TelemetrySnapshot
 from ..vision import VisionCaptureOutcome, VisionImage, VisionInspectionResult
 from .confirmations import ConfirmationManager, ConfirmationRejected, ConfirmationRequest
 from .models import (
@@ -40,7 +41,6 @@ from .models import (
     RunningProcessesOutput,
     SetApplicationVolumeArguments,
     SetVolumeArguments,
-    SystemStatsOutput,
     ToolExecutionResult,
     ToolStatus,
 )
@@ -447,13 +447,16 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
     return (
         definition(
             "get_system_stats",
-            "Pobierz bieżące użycie CPU, pamięci i dysku.",
+            "Pobierz świeży, ograniczony raport CPU, RAM, dysków, sieci, GPU i procesów.",
             NoArguments,
-            SystemStatsOutput,
+            TelemetrySnapshot,
             PermissionLevel.READ,
-            lambda _: platform.get_system_stats(),
+            lambda _: platform.get_system_stats(UUID(int=0)),
             category="system.read",
             action="Odczytać statystyki systemu?",
+            timeout=8,
+            contextual=lambda _, operation_id: platform.get_system_stats(operation_id),
+            cancel=platform.cancel_context,
         ),
         definition(
             "get_running_processes",

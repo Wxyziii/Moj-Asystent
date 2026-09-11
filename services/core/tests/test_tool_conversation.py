@@ -11,7 +11,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict
 
 from moj_asystent_core.context import Bounds, WindowIdentity
-from moj_asystent_core.conversation import LocalConversationService
+from moj_asystent_core.conversation import LocalConversationService, _requires_telemetry
 from moj_asystent_core.llm import (
     LanguageModelRequest,
     ModelStatus,
@@ -73,6 +73,13 @@ class ScriptedProvider:
 
     async def close(self) -> None:
         pass
+
+
+def test_diagnostic_questions_are_detected_for_deterministic_telemetry_fetch() -> None:
+    assert _requires_telemetry("Dlaczego gra laguje? Sprawdź CPU i GPU.")
+    assert _requires_telemetry("Czemu gra laguje?")
+    assert _requires_telemetry("Ile mam wolnego miejsca na dysku?")
+    assert not _requires_telemetry("Opowiedz mi krótką historię.")
 
 
 def tool_engine(runtime: CoreRuntime, policy_path: Path) -> ToolEngine:

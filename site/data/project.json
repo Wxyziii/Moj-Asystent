@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Selective local vision",
-    "status": "Milestone 8 complete — bounded, demand-driven screenshot understanding",
+    "stage": "System diagnostics",
+    "status": "Milestone 9 complete — request-driven local telemetry",
     "updated": "2026-09-11"
   },
   "principles": [
@@ -83,7 +83,7 @@
     {
       "id": 9,
       "name": "System diagnostics",
-      "status": "planned",
+      "status": "done",
       "description": "CPU, memory, disk, network and GPU telemetry with bounded diagnostic summaries."
     },
     {
@@ -106,6 +106,15 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "title": "Milestone 9: system diagnostics",
+      "items": [
+        "Added request-driven bounded CPU, RAM, disk, network and optional NVIDIA GPU telemetry.",
+        "Added deterministic process/GPU VRAM correlation, high-load facts, unavailable metrics and cancellable two-sample rates.",
+        "Kept telemetry memory-only with a twelve-snapshot/sixty-second history and routed diagnostic questions through verified measurements."
+      ]
+    },
     {
       "date": "2026-09-11",
       "title": "Milestone 8: selective local vision",

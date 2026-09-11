@@ -6,6 +6,10 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 9 request-driven system diagnostics through the typed `get_system_stats` tool: bounded CPU/RAM/volume/network measurements, optional NVIDIA NVML GPU/VRAM/temperature/power data, process correlation and deterministic diagnostic facts.
+- Two-sample rate normalization with explicit counter-reset/unavailable semantics, privacy-safe process names, cancellable captures and a twelve-snapshot/sixty-second in-memory history.
+- Deterministic diagnostic-question routing and a localized desktop activity label for CPU/RAM/GPU checks; persistent memory and watcher work remain postponed.
+
 - Milestone 8 demand-driven active-window and single-monitor region screenshots using bounded in-memory `mss` capture and Pillow RGB/JPEG normalization.
 - Existing Ollama/Qwen provider now accepts one ephemeral image beside normal text and tool calls; screenshot bytes never enter ordinary tool-result text, protocol events or conversation history.
 - Real `inspect_screen` visual-context metadata with immutable window identity, context/operation/capture IDs, bounds, timings, privacy exclusions and stale-window rejection.

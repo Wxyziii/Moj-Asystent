@@ -192,17 +192,29 @@ Deliverables:
 - DPI-aware region selection with a removable reduced preview;
 - exclusions, stale-window rejection and short-lived image buffers.
 
-System/GPU telemetry and bottleneck analysis remain Milestone 9 work.
+System/GPU telemetry and bottleneck analysis are covered by Milestone 9.
 
 ## Milestone 9 — System telemetry and diagnostics
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
 - CPU/RAM/disk/network telemetry;
 - NVIDIA GPU/VRAM/temp/power telemetry;
 - per-process correlation and diagnostic summaries.
+
+Completed scope:
+
+- request-driven, two-sample CPU/RAM/volume/network telemetry with explicit
+  unavailable and counter-reset semantics;
+- optional NVIDIA NVML GPU utilization, VRAM, temperature, power and bounded
+  PID/VRAM correlation, preserving partial metric availability;
+- bounded process correlation, deterministic high-load/temperature facts and
+  a twelve-snapshot in-memory history with a sixty-second retention limit;
+- the existing typed `get_system_stats` tool now returns the validated
+  snapshot, and diagnostic questions fetch measurements before the local model
+  answers.
 
 ## Milestone 10 — Memory/routines
 

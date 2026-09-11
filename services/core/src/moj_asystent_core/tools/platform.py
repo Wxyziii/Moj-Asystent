@@ -21,6 +21,7 @@ from ..context import (
     UiaWorker,
     WindowsContextService,
 )
+from ..telemetry import TelemetryService, TelemetrySnapshot
 from ..vision import (
     MssScreenshotBackend,
     ScreenshotWorker,
@@ -52,7 +53,6 @@ from .models import (
     RunningProcessesOutput,
     SetApplicationVolumeArguments,
     SetVolumeArguments,
-    SystemStatsOutput,
 )
 
 MAX_FILE_BYTES: Final = 262_144
@@ -192,6 +192,7 @@ class WindowsToolPlatform:
         context_settings: ContextSettings | None = None,
         vision_service: VisionCaptureService | None = None,
         vision_settings: VisionSettings | None = None,
+        telemetry_service: TelemetryService | None = None,
     ) -> None:
         self.paths = path_policy or PathPolicy()
         self.approved_restart_paths = approved_restart_paths or frozenset()
@@ -212,18 +213,17 @@ class WindowsToolPlatform:
             exclusions=settings.exclusions,
             enabled=settings.enabled,
         )
+        self.telemetry = telemetry_service or TelemetryService()
 
-    def get_system_stats(self) -> SystemStatsOutput:
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage(Path.home().anchor)
-        return SystemStatsOutput(
-            cpu_percent=psutil.cpu_percent(interval=0.1),
-            memory_percent=memory.percent,
-            memory_used_bytes=memory.used,
-            memory_total_bytes=memory.total,
-            disk_percent=disk.percent,
-            disk_free_bytes=disk.free,
-        )
+    def get_system_stats(self, operation_id: UUID) -> TelemetrySnapshot:
+        active_process = None
+        try:
+            active = self.context.active_window()
+            if active.available and active.identity is not None and active.process_name:
+                active_process = (active.identity.pid, active.process_name)
+        except Exception:
+            active_process = None
+        return self.telemetry.capture(operation_id, active_process=active_process)
 
     def get_running_processes(self, args: RunningProcessesArguments) -> RunningProcessesOutput:
         processes: list[ProcessSummary] = []
@@ -290,10 +290,12 @@ class WindowsToolPlatform:
     def cancel_context(self) -> None:
         self.context.cancel()
         self.vision.cancel()
+        self.telemetry.cancel()
 
     def close(self) -> None:
         self.context.close()
         self.vision.close()
+        self.telemetry.close()
 
     def list_directory(self, args: ListDirectoryArguments) -> ListDirectoryOutput:
         directory = self.paths.existing_directory(args.path)
