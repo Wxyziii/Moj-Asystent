@@ -131,6 +131,20 @@ export interface SystemError extends EventBase {
     message: string;
   };
 }
+export interface WatcherNotification extends EventBase {
+  type: "watcher.notification";
+  payload: {
+    watcher_id: string;
+    notification_id: string;
+    watcher_type: "window" | "process" | "file" | "resource" | "build" | "download";
+    event_type: string;
+    title: string;
+    message: string;
+    target: string;
+    status: "active" | "paused" | "completed" | "failed" | "cancelled" | "expired";
+    actions: Array<"inspect" | "later" | "stop">;
+  };
+}
 export type ProtocolEvent =
   | ClientHello
   | SystemHealth
@@ -144,7 +158,8 @@ export type ProtocolEvent =
   | ToolConfirmationRequested
   | ToolConfirmationResolved
   | ToolResult
-  | SystemError;
+  | SystemError
+  | WatcherNotification;
 
 export type RecordingKind =
   "positive" | "natural_command" | "hard_negative" | "ordinary_speech";
@@ -532,6 +547,35 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         errorCodes.includes(payload.code as (typeof errorCodes)[number]) &&
         boundedString(payload.message, 1, 256)
         ? (value as unknown as SystemError)
+        : null;
+    case "watcher.notification":
+      return exactObject(payload, [
+        "watcher_id",
+        "notification_id",
+        "watcher_type",
+        "event_type",
+        "title",
+        "message",
+        "target",
+        "status",
+        "actions",
+      ]) &&
+        isUuid(payload.watcher_id) &&
+        isUuid(payload.notification_id) &&
+        ["window", "process", "file", "resource", "build", "download"].includes(
+          String(payload.watcher_type),
+        ) &&
+        boundedString(payload.event_type, 2, 64) &&
+        boundedString(payload.title, 1, 128) &&
+        boundedString(payload.message, 1, 512) &&
+        boundedString(payload.target, 1, 1_024) &&
+        ["active", "paused", "completed", "failed", "cancelled", "expired"].includes(
+          String(payload.status),
+        ) &&
+        Array.isArray(payload.actions) &&
+        payload.actions.length <= 3 &&
+        payload.actions.every((item) => ["inspect", "later", "stop"].includes(String(item)))
+        ? (value as unknown as WatcherNotification)
         : null;
     default:
       return null;

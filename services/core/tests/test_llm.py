@@ -12,6 +12,7 @@ from moj_asystent_core.llm import (
     ConversationContext,
     LanguageModelRequest,
     ModelStatus,
+    ModelTextDelta,
     ModelToolCallDelta,
     OllamaLanguageModelProvider,
     ProviderProtocolError,
@@ -225,6 +226,7 @@ async def test_ollama_multimodal_request_uses_official_message_images_shape() ->
         "images": [expected],
     }
     assert "niezaufan" in messages[0]["content"]
+    assert isinstance(events[0], ModelTextDelta)
     assert events[0].text == "Widzę okno."
     assert image.cleared is False
     image.clear()

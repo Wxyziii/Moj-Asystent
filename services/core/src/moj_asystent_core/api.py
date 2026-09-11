@@ -8,8 +8,9 @@ from base64 import b64encode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
@@ -54,6 +55,8 @@ from .memory import (
     RoutineStep,
     RoutineSummary,
     SQLiteMemoryStore,
+    WatcherEventRecord,
+    WatcherRecord,
     default_memory_database_path,
 )
 from .protocol import (
@@ -76,6 +79,14 @@ from .tools.policy import default_policy_path
 from .vision import PendingVisionStore, VisionInspectionResult, VisionSettings
 from .wakeword import WakeModelMetadata, WakeModelStore, default_wake_root
 from .wakeword_training import OpenWakeWordOnnxTrainer, WakeOnboardingService
+from .watchers import (
+    WatcherCreateRequest,
+    WatcherObservationProvider,
+    WatcherPlatform,
+    WatcherService,
+    WatcherToolBridge,
+    WatcherValidationError,
+)
 
 logger = logging.getLogger(__name__)
 MAX_WEBSOCKET_MESSAGE_BYTES = 32_768
@@ -200,6 +211,18 @@ class RoutineRenameRequest(StrictRequest):
     name: str = Field(min_length=1, max_length=96)
 
 
+class WatcherWriteRequest(StrictRequest):
+    explicit_intent: Literal[True]
+    type: Literal["window", "process", "file", "resource", "build", "download"]
+    name: str = Field(min_length=1, max_length=96)
+    target: dict[str, object]
+    condition: dict[str, object]
+    interval_seconds: StrictInt = Field(default=2, ge=1, le=3_600)
+    expires_at: datetime | None = None
+    one_shot: StrictBool = True
+    notification_level: Literal["normal", "quiet"] = "normal"
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     host: str = "127.0.0.1"
@@ -258,11 +281,24 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings.memory_database_path
     )
     app.state.memory_store = memory_store
+
+    def publish_watcher_notification(payload) -> None:
+        runtime.publish(new_event("watcher.notification", payload))
+
+    watcher_service = WatcherService(
+        memory_store,
+        cast(WatcherPlatform, tool_platform),
+        publish_watcher_notification,
+        provider=app.state.watcher_provider,
+    )
+    app.state.watcher_service = watcher_service
+    await watcher_service.start()
     tool_engine: ToolEngine = build_tool_engine(
         runtime,
         policy_path=app.state.settings.permission_policy_path,
         platform=tool_platform,
         memory_store=memory_store,
+        watcher_bridge=WatcherToolBridge(watcher_service),
     )
     app.state.tool_engine = tool_engine
     conversation = LocalConversationService(
@@ -304,6 +340,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await watcher_service.shutdown()
         await onboarding.shutdown()
         await routine_service.shutdown()
         await chat.shutdown()
@@ -322,6 +359,7 @@ def create_app(
     language_model_provider: LanguageModelProvider | None = None,
     tool_platform: WindowsToolPlatform | None = None,
     memory_store: SQLiteMemoryStore | None = None,
+    watcher_provider: WatcherObservationProvider | None = None,
 ) -> FastAPI:
     resolved = settings or CoreSettings()
     app = FastAPI(title="Mój Asystent Core", version=PROTOCOL_VERSION, lifespan=lifecycle)
@@ -331,6 +369,7 @@ def create_app(
     )
     app.state.tool_platform = tool_platform
     app.state.memory_store = memory_store
+    app.state.watcher_provider = watcher_provider
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(ALLOWED_ORIGINS),
@@ -388,6 +427,13 @@ def create_app(
         if isinstance(error, MemoryStoreBusyError):
             return HTTPException(status_code=503, detail="Pamięć lokalna jest chwilowo zajęta.")
         return HTTPException(status_code=503, detail="Pamięć lokalna jest niedostępna.")
+
+    def watcher_error(error: Exception) -> HTTPException:
+        if isinstance(error, WatcherValidationError | MemoryValidationError):
+            return HTTPException(status_code=422, detail=str(error))
+        if isinstance(error, MemoryStoreBusyError):
+            return HTTPException(status_code=503, detail="Pamięć lokalna jest chwilowo zajęta.")
+        return HTTPException(status_code=503, detail="Obserwacje są chwilowo niedostępne.")
 
     def public_metadata(metadata: WakeModelMetadata) -> dict[str, object]:
         return metadata.model_dump(mode="json", exclude={"model_path"})
@@ -574,6 +620,115 @@ def create_app(
         except Exception as error:
             raise routine_error(error) from error
         return result.model_dump(mode="json")
+
+    @app.get("/watchers")
+    async def list_watchers(_: Annotated[None, Depends(authorize)]) -> dict[str, object]:
+        records: tuple[WatcherRecord, ...] = await app.state.watcher_service.list()
+        return {"watchers": [record.model_dump(mode="json") for record in records]}
+
+    @app.get("/watchers/events")
+    async def list_watcher_events(
+        watcher_id: UUID | None = None,
+        limit: int = 128,
+        _: Annotated[None, Depends(authorize)] = None,
+    ) -> dict[str, object]:
+        try:
+            records: tuple[WatcherEventRecord, ...] = await app.state.watcher_service.events(
+                watcher_id, limit=limit
+            )
+        except Exception as error:
+            raise watcher_error(error) from error
+        return {"events": [record.model_dump(mode="json") for record in records]}
+
+    @app.delete("/watchers/events")
+    async def clear_watcher_events(
+        watcher_id: UUID | None = None,
+        _: Annotated[None, Depends(authorize)] = None,
+    ) -> dict[str, int]:
+        try:
+            removed = await app.state.watcher_service.clear_events(watcher_id)
+        except Exception as error:
+            raise watcher_error(error) from error
+        return {"removed": removed}
+
+    @app.post("/watchers")
+    async def create_watcher(
+        request: WatcherWriteRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        try:
+            watcher = await app.state.watcher_service.create(
+                WatcherCreateRequest.model_validate(
+                    {
+                        "explicit_intent": request.explicit_intent,
+                        "type": request.type,
+                        "name": request.name,
+                        "target": request.target,
+                        "condition": request.condition,
+                        "interval_seconds": request.interval_seconds,
+                        "expires_at": request.expires_at,
+                        "one_shot": request.one_shot,
+                        "notification_level": request.notification_level,
+                    }
+                )
+            )
+        except Exception as error:
+            raise watcher_error(error) from error
+        return watcher.model_dump(mode="json")
+
+    @app.get("/watchers/{watcher_id}")
+    async def inspect_watcher(
+        watcher_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        watcher = await app.state.watcher_service.get(watcher_id)
+        if watcher is None:
+            raise HTTPException(status_code=404, detail="Obserwacja nie istnieje.")
+        return watcher.model_dump(mode="json")
+
+    @app.post("/watchers/{watcher_id}/pause")
+    async def pause_watcher(
+        watcher_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        try:
+            watcher = await app.state.watcher_service.pause(watcher_id)
+        except Exception as error:
+            raise watcher_error(error) from error
+        return watcher.model_dump(mode="json")
+
+    @app.post("/watchers/{watcher_id}/resume")
+    async def resume_watcher(
+        watcher_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        try:
+            watcher = await app.state.watcher_service.resume(watcher_id)
+        except Exception as error:
+            raise watcher_error(error) from error
+        return watcher.model_dump(mode="json")
+
+    @app.post("/watchers/{watcher_id}/cancel")
+    async def cancel_watcher(
+        watcher_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        try:
+            watcher = await app.state.watcher_service.cancel(watcher_id)
+        except Exception as error:
+            raise watcher_error(error) from error
+        return watcher.model_dump(mode="json")
+
+    @app.delete("/watchers/{watcher_id}")
+    async def delete_watcher(
+        watcher_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        try:
+            removed = await app.state.watcher_service.delete(watcher_id)
+        except Exception as error:
+            raise watcher_error(error) from error
+        return {"removed": removed}
 
     @app.post("/chat")
     async def chat(

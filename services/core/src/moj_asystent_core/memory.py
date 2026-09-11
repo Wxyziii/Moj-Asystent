@@ -22,11 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_
 
 from .tools.models import JsonValue
 
-DB_SCHEMA_VERSION = 1
+DB_SCHEMA_VERSION = 2
 MAX_MEMORY_RESULTS = 12
 MAX_MEMORY_CONTEXT_CHARS = 4_096
 MAX_ROUTINE_STEPS = 16
 MAX_ROUTINE_ARGUMENT_BYTES = 8_192
+MAX_WATCHER_JSON_BYTES = 8_192
+MAX_WATCHER_EVENT_PAYLOAD_BYTES = 2_048
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 _SECRET_KEY = re.compile(
     r"(?:password|hasło|passwd|api[\s_-]*key|token|credential|secret|sekret|"
@@ -121,6 +123,38 @@ class RoutineSummary(MemoryModel):
     name: Annotated[str, Field(min_length=1, max_length=96)]
     step_count: Annotated[StrictInt, Field(ge=1, le=MAX_ROUTINE_STEPS)]
     updated_at: datetime
+
+
+WatcherType = Literal["window", "process", "file", "resource", "build", "download"]
+WatcherStatus = Literal["active", "paused", "completed", "failed", "cancelled", "expired"]
+WatcherNotificationLevel = Literal["normal", "quiet"]
+
+
+class WatcherRecord(MemoryModel):
+    watcher_id: UUID
+    watcher_type: WatcherType
+    status: WatcherStatus
+    name: Annotated[str, Field(min_length=1, max_length=96)]
+    target: dict[str, JsonValue] = Field(max_length=32)
+    condition: dict[str, JsonValue] = Field(max_length=32)
+    interval_seconds: Annotated[StrictInt, Field(ge=1, le=3_600)]
+    expires_at: datetime | None = None
+    one_shot: StrictBool = True
+    notification_level: WatcherNotificationLevel = "normal"
+    last_observed: dict[str, JsonValue] | None = Field(default=None, max_length=32)
+    last_event_type: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class WatcherEventRecord(MemoryModel):
+    event_id: UUID
+    watcher_id: UUID
+    occurred_at: datetime
+    event_type: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_.-]{1,63}$")]
+    payload: dict[str, JsonValue] = Field(max_length=32)
+    notified: StrictBool
+    interpreted: StrictBool
 
 
 class RememberPreferenceArguments(MemoryModel):
@@ -284,6 +318,9 @@ class SQLiteMemoryStore:
                         raise MemorySchemaMismatchError("Wersja bazy pamięci jest nowsza.")
                     if version == 0:
                         connection.executescript(_SCHEMA_V1)
+                        version = 1
+                    if version == 1:
+                        connection.executescript(_SCHEMA_V2)
                 except MemoryStoreError:
                     connection.rollback()
                     raise
@@ -788,6 +825,176 @@ class SQLiteMemoryStore:
 
         return self._run(delete)
 
+    def create_watcher(self, record: WatcherRecord) -> WatcherRecord:
+        encoded_target = _bounded_json(record.target, MAX_WATCHER_JSON_BYTES, "cel obserwacji")
+        encoded_condition = _bounded_json(
+            record.condition, MAX_WATCHER_JSON_BYTES, "warunek obserwacji"
+        )
+        encoded_observed = (
+            _bounded_json(record.last_observed, MAX_WATCHER_JSON_BYTES, "stan obserwacji")
+            if record.last_observed is not None
+            else None
+        )
+
+        def write(connection: sqlite3.Connection) -> None:
+            with connection:
+                connection.execute(
+                    "INSERT INTO watchers("
+                    "id, watcher_type, status, name, target_json, condition_json, "
+                    "interval_seconds, expires_at, one_shot, notification_level, "
+                    "last_observed_json, last_event_type, created_at, updated_at) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(record.watcher_id),
+                        record.watcher_type,
+                        record.status,
+                        record.name,
+                        encoded_target,
+                        encoded_condition,
+                        record.interval_seconds,
+                        _iso(record.expires_at) if record.expires_at else None,
+                        int(record.one_shot),
+                        record.notification_level,
+                        encoded_observed,
+                        record.last_event_type,
+                        _iso(record.created_at),
+                        _iso(record.updated_at),
+                    ),
+                )
+
+        self._run(write)
+        return record
+
+    def get_watcher(self, watcher_id: UUID) -> WatcherRecord | None:
+        def read(connection: sqlite3.Connection) -> WatcherRecord | None:
+            row = connection.execute(
+                "SELECT * FROM watchers WHERE id = ?", (str(watcher_id),)
+            ).fetchone()
+            return _watcher_row(row) if row is not None else None
+
+        return self._run(read)
+
+    def list_watchers(self) -> tuple[WatcherRecord, ...]:
+        def read(connection: sqlite3.Connection) -> tuple[WatcherRecord, ...]:
+            rows = connection.execute(
+                "SELECT * FROM watchers ORDER BY created_at DESC LIMIT 128"
+            ).fetchall()
+            return tuple(_watcher_row(row) for row in rows)
+
+        return self._run(read)
+
+    def update_watcher(self, record: WatcherRecord) -> WatcherRecord:
+        encoded_target = _bounded_json(record.target, MAX_WATCHER_JSON_BYTES, "cel obserwacji")
+        encoded_condition = _bounded_json(
+            record.condition, MAX_WATCHER_JSON_BYTES, "warunek obserwacji"
+        )
+        encoded_observed = (
+            _bounded_json(record.last_observed, MAX_WATCHER_JSON_BYTES, "stan obserwacji")
+            if record.last_observed is not None
+            else None
+        )
+
+        def write(connection: sqlite3.Connection) -> None:
+            with connection:
+                result = connection.execute(
+                    "UPDATE watchers SET status=?, name=?, target_json=?, condition_json=?, "
+                    "interval_seconds=?, expires_at=?, one_shot=?, notification_level=?, "
+                    "last_observed_json=?, last_event_type=?, updated_at=? WHERE id=?",
+                    (
+                        record.status,
+                        record.name,
+                        encoded_target,
+                        encoded_condition,
+                        record.interval_seconds,
+                        _iso(record.expires_at) if record.expires_at else None,
+                        int(record.one_shot),
+                        record.notification_level,
+                        encoded_observed,
+                        record.last_event_type,
+                        _iso(record.updated_at),
+                        str(record.watcher_id),
+                    ),
+                )
+                if result.rowcount != 1:
+                    raise MemoryValidationError("Obserwacja nie istnieje.")
+
+        self._run(write)
+        return record
+
+    def delete_watcher(self, watcher_id: UUID) -> bool:
+        def delete(connection: sqlite3.Connection) -> bool:
+            with connection:
+                result = connection.execute("DELETE FROM watchers WHERE id = ?", (str(watcher_id),))
+                return result.rowcount == 1
+
+        return self._run(delete)
+
+    def append_watcher_event(self, record: WatcherEventRecord, *, limit: int = 256) -> None:
+        if not 1 <= limit <= 1_024:
+            raise MemoryValidationError("Limit historii obserwacji jest poza zakresem.")
+        encoded = _bounded_json(
+            record.payload, MAX_WATCHER_EVENT_PAYLOAD_BYTES, "zdarzenie obserwacji"
+        )
+
+        def write(connection: sqlite3.Connection) -> None:
+            with connection:
+                connection.execute(
+                    "INSERT INTO watcher_events("
+                    "id, watcher_id, occurred_at, event_type, payload_json, notified, interpreted) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(record.event_id),
+                        str(record.watcher_id),
+                        _iso(record.occurred_at),
+                        record.event_type,
+                        encoded,
+                        int(record.notified),
+                        int(record.interpreted),
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM watcher_events WHERE id IN ("
+                    "SELECT id FROM watcher_events ORDER BY occurred_at DESC "
+                    "LIMIT -1 OFFSET ?)",
+                    (limit,),
+                )
+
+        self._run(write)
+
+    def list_watcher_events(
+        self, watcher_id: UUID | None = None, *, limit: int = 128
+    ) -> tuple[WatcherEventRecord, ...]:
+        if not 1 <= limit <= 1_024:
+            raise MemoryValidationError("Limit historii obserwacji jest poza zakresem.")
+
+        def read(connection: sqlite3.Connection) -> tuple[WatcherEventRecord, ...]:
+            if watcher_id is None:
+                rows = connection.execute(
+                    "SELECT * FROM watcher_events ORDER BY occurred_at DESC LIMIT ?", (limit,)
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM watcher_events WHERE watcher_id = ? "
+                    "ORDER BY occurred_at DESC LIMIT ?",
+                    (str(watcher_id), limit),
+                ).fetchall()
+            return tuple(_watcher_event_row(row) for row in rows)
+
+        return self._run(read)
+
+    def clear_watcher_events(self, watcher_id: UUID | None = None) -> int:
+        def clear(connection: sqlite3.Connection) -> int:
+            with connection:
+                if watcher_id is None:
+                    result = connection.execute("DELETE FROM watcher_events")
+                else:
+                    result = connection.execute(
+                        "DELETE FROM watcher_events WHERE watcher_id = ?", (str(watcher_id),)
+                    )
+                return result.rowcount
+
+        return self._run(clear)
+
     def create_routine(
         self, name: str, steps: tuple[RoutineStep, ...], *, description: str | None = None
     ) -> RoutineRecord:
@@ -938,6 +1145,65 @@ def _memory_row(row: sqlite3.Row) -> MemoryRecord:
         raise MemoryStoreCorruptError("Pamięć w bazie ma nieprawidłowe dane.") from error
 
 
+def _bounded_json(value: object, maximum: int, label: str) -> str:
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise MemoryValidationError(f"{label} ma nieprawidłowy format.") from error
+    if len(encoded.encode("utf-8")) > maximum:
+        raise MemoryValidationError(f"{label} jest zbyt duże.")
+    return encoded
+
+
+def _watcher_row(row: sqlite3.Row) -> WatcherRecord:
+    try:
+        target = json.loads(row["target_json"])
+        condition = json.loads(row["condition_json"])
+        observed = (
+            json.loads(row["last_observed_json"]) if row["last_observed_json"] is not None else None
+        )
+        if not isinstance(target, dict) or not isinstance(condition, dict):
+            raise ValueError("Watcher JSON must be objects")
+        if observed is not None and not isinstance(observed, dict):
+            raise ValueError("Watcher observed state must be an object")
+        return WatcherRecord(
+            watcher_id=_uuid(row["id"]),
+            watcher_type=row["watcher_type"],
+            status=row["status"],
+            name=row["name"],
+            target=target,
+            condition=condition,
+            interval_seconds=row["interval_seconds"],
+            expires_at=_parse_datetime(row["expires_at"]) if row["expires_at"] else None,
+            one_shot=bool(row["one_shot"]),
+            notification_level=row["notification_level"],
+            last_observed=observed,
+            last_event_type=row["last_event_type"],
+            created_at=_parse_datetime(row["created_at"]),
+            updated_at=_parse_datetime(row["updated_at"]),
+        )
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        raise MemoryStoreCorruptError("Obserwacja w bazie ma nieprawidłowe dane.") from error
+
+
+def _watcher_event_row(row: sqlite3.Row) -> WatcherEventRecord:
+    try:
+        payload = json.loads(row["payload_json"])
+        if not isinstance(payload, dict):
+            raise ValueError("Watcher event payload must be an object")
+        return WatcherEventRecord(
+            event_id=_uuid(row["id"]),
+            watcher_id=_uuid(row["watcher_id"]),
+            occurred_at=_parse_datetime(row["occurred_at"]),
+            event_type=row["event_type"],
+            payload=payload,
+            notified=bool(row["notified"]),
+            interpreted=bool(row["interpreted"]),
+        )
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        raise MemoryStoreCorruptError("Historia obserwacji ma nieprawidłowe dane.") from error
+
+
 _SCHEMA_V1 = """
 BEGIN;
 CREATE TABLE IF NOT EXISTS settings (
@@ -1007,5 +1273,44 @@ CREATE TABLE IF NOT EXISTS routine_steps (
     PRIMARY KEY(routine_id, step_index)
 );
 PRAGMA user_version = 1;
+COMMIT;
+"""
+
+
+_SCHEMA_V2 = """
+BEGIN;
+CREATE TABLE IF NOT EXISTS watchers (
+    id TEXT PRIMARY KEY,
+    watcher_type TEXT NOT NULL CHECK(watcher_type IN (
+        'window', 'process', 'file', 'resource', 'build', 'download')),
+    status TEXT NOT NULL CHECK(status IN (
+        'active', 'paused', 'completed', 'failed', 'cancelled', 'expired')),
+    name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 96),
+    target_json TEXT NOT NULL CHECK(length(target_json) BETWEEN 2 AND 8192),
+    condition_json TEXT NOT NULL CHECK(length(condition_json) BETWEEN 2 AND 8192),
+    interval_seconds INTEGER NOT NULL CHECK(interval_seconds BETWEEN 1 AND 3600),
+    expires_at TEXT,
+    one_shot INTEGER NOT NULL CHECK(one_shot IN (0, 1)),
+    notification_level TEXT NOT NULL CHECK(notification_level IN ('normal', 'quiet')),
+    last_observed_json TEXT CHECK(last_observed_json IS NULL OR
+        length(last_observed_json) BETWEEN 2 AND 8192),
+    last_event_type TEXT CHECK(last_event_type IS NULL OR length(last_event_type) BETWEEN 1 AND 64),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS watchers_status_idx ON watchers(status, updated_at);
+CREATE TABLE IF NOT EXISTS watcher_events (
+    id TEXT PRIMARY KEY,
+    watcher_id TEXT NOT NULL REFERENCES watchers(id) ON DELETE CASCADE,
+    occurred_at TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(length(event_type) BETWEEN 2 AND 64),
+    payload_json TEXT NOT NULL CHECK(length(payload_json) BETWEEN 2 AND 2048),
+    notified INTEGER NOT NULL CHECK(notified IN (0, 1)),
+    interpreted INTEGER NOT NULL CHECK(interpreted IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS watcher_events_time_idx ON watcher_events(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS watcher_events_watcher_idx
+    ON watcher_events(watcher_id, occurred_at DESC);
+PRAGMA user_version = 2;
 COMMIT;
 """

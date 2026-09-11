@@ -3,6 +3,7 @@ import {
   Check,
   ChevronRight,
   Database,
+  Eye,
   Keyboard,
   MonitorUp,
   ShieldCheck,
@@ -24,6 +25,14 @@ import {
   type AliasRecord,
   type MemoryRecord,
 } from "../lib/memoryClient";
+import {
+  cancelWatcher,
+  deleteWatcher,
+  listWatchers,
+  pauseWatcher,
+  resumeWatcher,
+  type WatcherRecord,
+} from "../lib/watcherClient";
 
 interface SettingsShellProps {
   onBack: () => void;
@@ -39,6 +48,46 @@ interface SettingsSection {
   detail: string;
   value: string;
   action?: () => void;
+}
+
+const watcherStatusLabels: Record<WatcherRecord["status"], string> = {
+  active: "aktywna",
+  paused: "wstrzymana",
+  completed: "zakończona",
+  failed: "błąd",
+  cancelled: "anulowana",
+  expired: "wygasła",
+};
+
+const watcherTypeLabels: Record<WatcherRecord["watcher_type"], string> = {
+  window: "okno",
+  process: "proces",
+  file: "plik",
+  resource: "zasób",
+  build: "build",
+  download: "pobieranie",
+};
+
+function watcherTargetLabel(watcher: WatcherRecord): string {
+  const target = watcher.target;
+  if (typeof target.path === "string") return target.path;
+  if (typeof target.process_name === "string") return target.process_name;
+  if (typeof target.pid === "number") return `PID ${target.pid}`;
+  if (typeof target.title === "string") return target.title;
+  return "Cel lokalny";
+}
+
+function watcherConditionLabel(watcher: WatcherRecord): string {
+  const condition = watcher.condition;
+  if (typeof condition.metric === "string") {
+    const threshold =
+      typeof condition.threshold === "number"
+        ? ` · próg ${condition.threshold}`
+        : "";
+    return `${condition.metric}${threshold}`;
+  }
+  if (typeof condition.kind === "string") return condition.kind;
+  return "warunek strukturalny";
 }
 
 const baseSections: SettingsSection[] = [
@@ -68,6 +117,9 @@ export function SettingsShell({
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [memoryError, setMemoryError] = useState<string>();
+  const [watchers, setWatchers] = useState<WatcherRecord[]>([]);
+  const [watcherBusy, setWatcherBusy] = useState(false);
+  const [watcherError, setWatcherError] = useState<string>();
   const sections: SettingsSection[] = [
     {
       icon: SlidersHorizontal,
@@ -101,6 +153,7 @@ export function SettingsShell({
       setHistoryRetentionState(settings.history_retention);
       setMemories(records);
       setAliases(aliasRecords);
+      setWatchers(await listWatchers(credential));
     } catch (error) {
       setMemoryError(
         error instanceof Error
@@ -111,6 +164,43 @@ export function SettingsShell({
       setMemoryBusy(false);
     }
   }, [coreStatus, credential]);
+
+  const changeWatcher = async (
+    watcher: WatcherRecord,
+    action: "pause" | "resume" | "cancel" | "delete",
+  ) => {
+    if (!credential || watcherBusy) return;
+    setWatcherBusy(true);
+    setWatcherError(undefined);
+    try {
+      if (action === "delete") {
+        if (await deleteWatcher(watcher.watcher_id, credential))
+          setWatchers((current) =>
+            current.filter((item) => item.watcher_id !== watcher.watcher_id),
+          );
+      } else {
+        const updated =
+          action === "pause"
+            ? await pauseWatcher(watcher.watcher_id, credential)
+            : action === "resume"
+              ? await resumeWatcher(watcher.watcher_id, credential)
+              : await cancelWatcher(watcher.watcher_id, credential);
+        setWatchers((current) =>
+          current.map((item) =>
+            item.watcher_id === updated.watcher_id ? updated : item,
+          ),
+        );
+      }
+    } catch (error) {
+      setWatcherError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zmienić obserwacji.",
+      );
+    } finally {
+      setWatcherBusy(false);
+    }
+  };
 
   useEffect(() => {
     void refreshMemory();
@@ -354,6 +444,93 @@ export function SettingsShell({
                 <p className="memory-settings__error">{memoryError}</p>
               ) : null}
             </>
+          )}
+        </section>
+        <section className="memory-settings" aria-label="Obserwacje">
+          <div className="memory-settings__heading">
+            <span className="settings-row__icon">
+              <Eye size={19} />
+            </span>
+            <div>
+              <strong>Obserwacje</strong>
+              <small>
+                Tylko obserwacje, o które poprosisz. Bez automatycznych działań.
+              </small>
+            </div>
+          </div>
+          {coreStatus !== "connected" ? (
+            <p className="memory-settings__muted">
+              Połącz rdzeń, aby zarządzać obserwacjami.
+            </p>
+          ) : watchers.length === 0 ? (
+            <p className="memory-settings__muted">
+              Nie masz aktywnych obserwacji.
+            </p>
+          ) : (
+            <div className="memory-list">
+              {watchers.map((watcher) => (
+                <div className="memory-list__item" key={watcher.watcher_id}>
+                  <span>
+                    <strong>{watcher.name}</strong>
+                    <small>
+                      {watcherStatusLabels[watcher.status]} ·{" "}
+                      {watcherTypeLabels[watcher.watcher_type]}
+                    </small>
+                    <small className="watcher-settings__target">
+                      {watcherTargetLabel(watcher)} ·{" "}
+                      {watcherConditionLabel(watcher)}
+                    </small>
+                  </span>
+                  <span className="watcher-settings__actions">
+                    {watcher.status === "active" ? (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => void changeWatcher(watcher, "pause")}
+                        disabled={watcherBusy}
+                        aria-label="Wstrzymaj obserwację"
+                      >
+                        Ⅱ
+                      </button>
+                    ) : watcher.status === "paused" ? (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => void changeWatcher(watcher, "resume")}
+                        disabled={watcherBusy}
+                        aria-label="Wznów obserwację"
+                      >
+                        ▶
+                      </button>
+                    ) : null}
+                    {watcher.status === "active" ||
+                    watcher.status === "paused" ? (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => void changeWatcher(watcher, "cancel")}
+                        disabled={watcherBusy}
+                        aria-label="Zatrzymaj obserwację"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="icon-button"
+                      onClick={() => void changeWatcher(watcher, "delete")}
+                      disabled={watcherBusy}
+                      aria-label="Usuń obserwację"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {watcherError && (
+            <p className="memory-settings__error">{watcherError}</p>
           )}
         </section>
         <section className="shortcut-note">

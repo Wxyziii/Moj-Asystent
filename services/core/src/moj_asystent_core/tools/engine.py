@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
@@ -62,6 +62,9 @@ from .models import (
 )
 from .platform import PathPolicy, ToolPlatformError, WindowsToolPlatform
 from .policy import PermissionDecision, PermissionPolicyStore, ToolPreference
+
+if TYPE_CHECKING:
+    from ..watchers import WatcherToolBridge
 
 InputModel = TypeVar("InputModel", bound=BaseModel)
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
@@ -396,9 +399,10 @@ def build_tool_engine(
     path_roots: tuple[Path, ...] | None = None,
     platform: WindowsToolPlatform | None = None,
     memory_store: SQLiteMemoryStore | None = None,
+    watcher_bridge: WatcherToolBridge | None = None,
 ) -> ToolEngine:
     resolved_platform = platform or WindowsToolPlatform(path_policy=PathPolicy(path_roots))
-    registry = ToolRegistry(_definitions(resolved_platform, memory_store))
+    registry = ToolRegistry(_definitions(resolved_platform, memory_store, watcher_bridge))
     return ToolEngine(
         registry,
         PermissionPolicyStore(policy_path),
@@ -409,7 +413,9 @@ def build_tool_engine(
 
 
 def _definitions(
-    platform: WindowsToolPlatform, memory_store: SQLiteMemoryStore | None = None
+    platform: WindowsToolPlatform,
+    memory_store: SQLiteMemoryStore | None = None,
+    watcher_bridge: WatcherToolBridge | None = None,
 ) -> tuple[ToolDefinition, ...]:
     def definition(
         name: str,
@@ -696,6 +702,90 @@ def _definitions(
             risk="Wszystkie aplikacje zostaną zamknięte; niezapisana praca może zostać utracona.",
         ),
     )
+    if watcher_bridge is not None:
+        # Imported lazily to keep `moj_asystent_core.watchers` usable without
+        # importing the complete tool package first.
+        from ..watchers import (
+            WatcherActionArguments,
+            WatcherCreateRequest,
+            WatcherDeleteOutput,
+            WatcherListOutput,
+            WatcherRecord,
+        )
+
+        definitions = definitions + (
+            definition(
+                "create_watcher",
+                "Włącz jawną, ograniczoną obserwację lokalnego celu i powiadom o zmianie.",
+                WatcherCreateRequest,
+                WatcherRecord,
+                PermissionLevel.SENSITIVE,
+                watcher_bridge.create,
+                timeout=5,
+                category="watcher.sensitive",
+                action="Włączyć tę obserwację?",
+                target=lambda value: cast(WatcherCreateRequest, value).name,
+                risk="Obserwacja zostanie zapisana lokalnie i będzie sprawdzać wskazany cel.",
+            ),
+            definition(
+                "list_watchers",
+                "Pokaż ograniczoną listę jawnie utworzonych obserwacji.",
+                NoArguments,
+                WatcherListOutput,
+                PermissionLevel.READ,
+                watcher_bridge.list,
+                category="watcher.read",
+                action="Wyświetlić obserwacje?",
+            ),
+            definition(
+                "pause_watcher",
+                "Wstrzymaj jedną obserwację po jej identyfikatorze.",
+                WatcherActionArguments,
+                WatcherRecord,
+                PermissionLevel.SENSITIVE,
+                watcher_bridge.pause,
+                category="watcher.sensitive",
+                action="Wstrzymać obserwację?",
+                target=lambda value: str(cast(WatcherActionArguments, value).watcher_id),
+                risk="Obserwacja zostanie wstrzymana do czasu jej wznowienia.",
+            ),
+            definition(
+                "resume_watcher",
+                "Wznów jedną wstrzymaną obserwację po jej identyfikatorze.",
+                WatcherActionArguments,
+                WatcherRecord,
+                PermissionLevel.SENSITIVE,
+                watcher_bridge.resume,
+                category="watcher.sensitive",
+                action="Wznowić obserwację?",
+                target=lambda value: str(cast(WatcherActionArguments, value).watcher_id),
+                risk="Obserwacja znów zacznie sprawdzać wskazany cel.",
+            ),
+            definition(
+                "cancel_watcher",
+                "Zakończ jedną obserwację po jej identyfikatorze.",
+                WatcherActionArguments,
+                WatcherRecord,
+                PermissionLevel.SENSITIVE,
+                watcher_bridge.cancel,
+                category="watcher.sensitive",
+                action="Zatrzymać obserwację?",
+                target=lambda value: str(cast(WatcherActionArguments, value).watcher_id),
+                risk="Obserwacja zostanie zakończona i nie wznowi się automatycznie.",
+            ),
+            definition(
+                "delete_watcher",
+                "Usuń obserwację i jej zapisane zdarzenia.",
+                WatcherActionArguments,
+                WatcherDeleteOutput,
+                PermissionLevel.SENSITIVE,
+                watcher_bridge.delete,
+                category="watcher.sensitive",
+                action="Usunąć obserwację i historię?",
+                target=lambda value: str(cast(WatcherActionArguments, value).watcher_id),
+                risk="Definicja obserwacji i jej historia zostaną trwale usunięte.",
+            ),
+        )
     if memory_store is None:
         return definitions
 
@@ -706,7 +796,7 @@ def _definitions(
 
     def create_routine_output(value: BaseModel) -> RoutineWriteOutput:
         arguments = cast(CreateRoutineArguments, value)
-        known = {item.name: item for item in definitions}
+        known = {item.name: item for item in definitions if not item.name.endswith("_watcher")}
         for step in arguments.steps:
             definition_item = known.get(step.tool_name)
             if definition_item is None:

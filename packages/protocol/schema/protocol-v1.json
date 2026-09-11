@@ -262,6 +262,40 @@
       },
       "required": ["code", "message"],
       "additionalProperties": false
+    },
+    "watcherNotification": {
+      "type": "object",
+      "properties": {
+        "watcher_id": { "$ref": "#/$defs/uuid" },
+        "notification_id": { "$ref": "#/$defs/uuid" },
+        "watcher_type": {
+          "enum": ["window", "process", "file", "resource", "build", "download"]
+        },
+        "event_type": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,63}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "target": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "status": {
+          "enum": ["active", "paused", "completed", "failed", "cancelled", "expired"]
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 3,
+          "items": { "enum": ["inspect", "later", "stop"] }
+        }
+      },
+      "required": [
+        "watcher_id",
+        "notification_id",
+        "watcher_type",
+        "event_type",
+        "title",
+        "message",
+        "target",
+        "status",
+        "actions"
+      ],
+      "additionalProperties": false
     }
   },
   "oneOf": [
@@ -417,6 +451,18 @@
           "properties": {
             "type": { "const": "system.error" },
             "payload": { "$ref": "#/$defs/systemError" }
+          }
+        }
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "watcher.notification" },
+            "payload": { "$ref": "#/$defs/watcherNotification" }
           }
         }
       ]

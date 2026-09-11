@@ -239,7 +239,7 @@ Completed scope:
 
 ## Milestone 11 — Watchers/proactive assistance
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -247,6 +247,21 @@ Deliverables:
 - explicit watch commands;
 - event-driven AI escalation;
 - non-disruptive notifications.
+
+Completed scope:
+
+- one bounded asyncio scheduler with startup restoration, pause/resume,
+  cancellation, expiry and provider-failure handling;
+- typed, authenticated watcher APIs, confirmation-gated watcher tools and
+  Protocol 1.3 notification events;
+- versioned SQLite watcher definitions plus 256-event structured history;
+- deterministic identity checks, file-root/reparse protection, resource
+  hysteresis and duplicate suppression;
+- Polish overlay notifications and a lightweight settings list for
+  pause/resume/delete.
+
+The V1 implementation is notification-only. It does not run routines, invoke
+vision continuously or add arbitrary command execution.
 
 ## Milestone 12 — Quality/deep routing
 

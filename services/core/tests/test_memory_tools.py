@@ -7,24 +7,25 @@ import pytest
 
 from moj_asystent_core.memory import SQLiteMemoryStore
 from moj_asystent_core.runtime import CoreRuntime
+from moj_asystent_core.tools.confirmations import ConfirmationRequest
 from moj_asystent_core.tools.engine import build_tool_engine
-from moj_asystent_core.tools.models import ToolStatus
+from moj_asystent_core.tools.models import ToolExecutionResult, ToolStatus
 
 
 class Events:
     def can_request_confirmation(self) -> bool:
         return False
 
-    def publish_tool_status(self, *args) -> None:
+    def publish_tool_status(self, operation_id, call_id, tool_name, status) -> None:
         pass
 
-    def publish_confirmation_requested(self, *args) -> None:
+    def publish_confirmation_requested(self, request: ConfirmationRequest) -> None:
         pass
 
-    def publish_confirmation_resolved(self, *args) -> None:
+    def publish_confirmation_resolved(self, request: ConfirmationRequest, decision: str) -> None:
         pass
 
-    def publish_tool_result(self, *args) -> None:
+    def publish_tool_result(self, operation_id, call_id, result: ToolExecutionResult) -> None:
         pass
 
 

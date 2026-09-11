@@ -501,7 +501,9 @@ def test_builtin_registry_has_only_documented_tools_and_permissions(tmp_path: Pa
         for item in engine.registry.definitions()
         if item.permission is PermissionLevel.SENSITIVE
     )
-    assert engine.registry.get("get_system_stats").output_model is TelemetrySnapshot
+    definition = engine.registry.get("get_system_stats")
+    assert definition is not None
+    assert definition.output_model is TelemetrySnapshot
 
 
 def test_corrupt_policy_fails_closed(tmp_path: Path) -> None:

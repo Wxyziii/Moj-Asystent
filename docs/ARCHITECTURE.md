@@ -232,9 +232,20 @@ OS event -> cheap rule -> relevant? -> collect context -> AI if needed -> notifi
 
 This prevents continuous LLM/vision use.
 
+Milestone 11 implements one asyncio-owned, bounded scheduler for the six
+planned watcher categories. Definitions and the last structured observation
+are stored in the existing SQLite database (schema version 2); event history is
+limited to 256 records. Active definitions are revalidated on startup, tasks
+are cancelled before persistence and runtime shutdown, and identity changes or
+unsafe filesystem replacements fail closed. Only meaningful transitions are
+published as authenticated Protocol 1.3 `watcher.notification` events. No
+watcher event authorizes a tool or launches a routine. Explicit watcher
+management is exposed through typed ToolEngine definitions backed by a small
+event-loop bridge; creation and persistent changes remain confirmation-gated.
+
 ### 10. Persistence
 
-Milestone 10 adds a versioned local SQLite store for structured state:
+Milestones 10–11 use a versioned local SQLite store for structured state:
 
 - settings;
 - completed conversation metadata and messages (opt-in retention);
@@ -242,14 +253,16 @@ Milestone 10 adds a versioned local SQLite store for structured state:
 - preferences;
 - aliases;
 - routines;
+- watcher definitions and bounded watcher event history;
 
 The store lives under the user's local application-data directory, uses a
 short-lived connection per operation with WAL and foreign keys, and refuses
 unknown schema versions or corrupt data without wiping it. The existing
 validated permissions JSON remains a separate store because permission writes
 have different fail-closed semantics from user-facing memory deletion. No
-watchers, embeddings, vector database or durable telemetry are included in
-this milestone.
+embeddings, vector database or durable telemetry are included. Watcher history
+remains bounded and excludes screenshots, raw telemetry streams and full build
+logs.
 
 Durable writes are explicit and bounded. Retrieval is deterministic and
 inserts at most eight approved, non-expired records (4 KiB) into a clearly

@@ -42,7 +42,8 @@ export type CoreContentEvent = Extract<
       | "tool.execution.status"
       | "tool.confirmation.requested"
       | "tool.confirmation.resolved"
-      | "tool.result";
+      | "tool.result"
+      | "watcher.notification";
   }
 >;
 

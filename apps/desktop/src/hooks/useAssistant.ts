@@ -13,12 +13,14 @@ import {
 import type {
   ModelStatusChanged,
   ToolConfirmationRequested,
+  WatcherNotification,
 } from "@moj-asystent/protocol";
 import {
   getCoreSessionCredential,
   resolveToolConfirmation,
   type ToolConfirmationDecision,
 } from "../lib/desktop";
+import { cancelWatcher } from "../lib/watcherClient";
 
 export interface ConversationMessage {
   id: string;
@@ -45,6 +47,9 @@ export function useAssistantUi() {
   const [toolActivity, setToolActivity] = useState<string>();
   const [contextChip, setContextChip] = useState<string>();
   const [visualContext, setVisualContext] = useState<RegionCapture>();
+  const [notifications, setNotifications] = useState<
+    WatcherNotification["payload"][]
+  >([]);
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
     const savedMode = window.localStorage.getItem("moj-asystent.overlay-mode");
     return savedMode === "expanded" || savedMode === "settings"
@@ -62,6 +67,10 @@ export function useAssistantUi() {
     const content = (event: CoreContentEvent) => {
       if (event.type === "model.status.changed") {
         setModelStatus(event.payload);
+        return;
+      }
+      if (event.type === "watcher.notification") {
+        setNotifications((current) => [event.payload, ...current].slice(0, 4));
         return;
       }
       if (event.type === "tool.execution.status") {
@@ -294,6 +303,25 @@ export function useAssistantUi() {
     [confirmationBusy, pendingConfirmation],
   );
 
+  const dismissNotification = useCallback((notificationId: string) => {
+    setNotifications((current) =>
+      current.filter((item) => item.notification_id !== notificationId),
+    );
+  }, []);
+
+  const stopWatcher = useCallback(
+    async (notificationId: string, watcherId: string) => {
+      if (!credential) return;
+      try {
+        await cancelWatcher(watcherId, credential);
+        dismissNotification(notificationId);
+      } catch {
+        setToolActivity("Nie udało się zatrzymać obserwacji.");
+      }
+    },
+    [credential, dismissNotification],
+  );
+
   return {
     assistantState,
     coreStatus,
@@ -314,5 +342,8 @@ export function useAssistantUi() {
     visualContext,
     removeContext,
     decideConfirmation,
+    notifications,
+    dismissNotification,
+    stopWatcher,
   };
 }

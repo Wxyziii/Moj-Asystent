@@ -47,6 +47,9 @@ function AssistantApp() {
     visualContext,
     removeContext,
     decideConfirmation,
+    notifications,
+    dismissNotification,
+    stopWatcher,
   } = useAssistantUi();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [assistantName, setAssistantName] = useState<string>();
@@ -151,6 +154,11 @@ function AssistantApp() {
         onSelectRegion={() => void beginRegionSelection()}
         onRemoveContext={removeContext}
         onConfirmationDecision={(decision) => void decideConfirmation(decision)}
+        notifications={notifications}
+        onDismissNotification={dismissNotification}
+        onStopNotification={(notificationId, watcherId) =>
+          void stopWatcher(notificationId, watcherId)
+        }
       />
     );
   return (

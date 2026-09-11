@@ -21,12 +21,44 @@ def test_first_run_migrates_schema_and_defaults_history_off(tmp_path: Path) -> N
 
     assert store.history_retention_enabled() is False
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
         tables = {
             row[0]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-    assert {"conversations", "messages", "preferences", "memories", "routines"} <= tables
+    assert {
+        "conversations",
+        "messages",
+        "preferences",
+        "memories",
+        "routines",
+        "watchers",
+        "watcher_events",
+    } <= tables
+
+
+def test_v1_database_migrates_watcher_tables_without_losing_existing_data(tmp_path: Path) -> None:
+    path = tmp_path / "memory.sqlite3"
+    store = SQLiteMemoryStore(path)
+    saved = store.create_memory("migration_note", "Zachowaj tę notatkę")
+    store.close()
+
+    # Reproduce a pre-Milestone-11 database: the existing v1 tables remain,
+    # while the new watcher tables are absent and user_version is 1.
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE watcher_events")
+        connection.execute("DROP TABLE watchers")
+        connection.execute("PRAGMA user_version = 1")
+
+    reopened = SQLiteMemoryStore(path)
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    assert {"watchers", "watcher_events"} <= tables
+    assert reopened.get_memory(saved.memory_id) == saved
 
 
 def test_preference_update_and_reopen_persist_value(tmp_path: Path) -> None:
@@ -64,7 +96,9 @@ def test_aliases_normalize_collisions_and_explicit_updates(tmp_path: Path) -> No
         store.save_alias("project", "private", "token: abc")
     updated = store.save_alias("project", "AIMPEAK", r"C:\Other", overwrite=True)
     assert updated.alias_id == saved.alias_id
-    assert store.resolve_alias("aimpeak", kind="project").target == r"C:\Other"
+    resolved = store.resolve_alias("aimpeak", kind="project")
+    assert resolved is not None
+    assert resolved.target == r"C:\Other"
 
 
 def test_retrieval_is_relevant_bounded_and_keeps_injection_as_data(tmp_path: Path) -> None:

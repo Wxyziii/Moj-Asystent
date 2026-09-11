@@ -187,6 +187,23 @@ class SystemErrorPayload(EventPayload):
     message: Annotated[str, Field(min_length=1, max_length=256)]
 
 
+class WatcherNotificationPayload(EventPayload):
+    watcher_id: UUID
+    notification_id: UUID
+    watcher_type: Literal["window", "process", "file", "resource", "build", "download"]
+    event_type: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_.-]{1,63}$")]
+    title: Annotated[str, Field(min_length=1, max_length=128)]
+    message: Annotated[str, Field(min_length=1, max_length=512)]
+    target: Annotated[str, Field(min_length=1, max_length=1_024)]
+    status: Literal["active", "paused", "completed", "failed", "cancelled", "expired"]
+    actions: tuple[Literal["inspect", "later", "stop"], ...] = Field(max_length=3)
+
+    @field_validator("watcher_id", "notification_id", mode="before")
+    @classmethod
+    def validate_ids(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
 class EventBase(StrictModel):
     protocol_version: Literal["1.3"]
     event_id: UUID
@@ -278,6 +295,11 @@ class SystemError(EventBase):
     payload: SystemErrorPayload
 
 
+class WatcherNotification(EventBase):
+    type: Literal["watcher.notification"]
+    payload: WatcherNotificationPayload
+
+
 type ProtocolEvent = (
     ClientHello
     | SystemHealth
@@ -292,6 +314,7 @@ type ProtocolEvent = (
     | ToolConfirmationResolved
     | ToolResult
     | SystemError
+    | WatcherNotification
 )
 _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
     "client.hello": ClientHello,
@@ -307,6 +330,7 @@ _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
     "tool.confirmation.resolved": ToolConfirmationResolved,
     "tool.result": ToolResult,
     "system.error": SystemError,
+    "watcher.notification": WatcherNotification,
 }
 
 
@@ -355,6 +379,7 @@ def new_event(
         "tool.confirmation.resolved",
         "tool.result",
         "system.error",
+        "watcher.notification",
     ],
     payload: EventPayload,
     *,
@@ -372,6 +397,7 @@ def new_event(
     | ToolConfirmationResolved
     | ToolResult
     | SystemError
+    | WatcherNotification
 ):
     values = {
         "protocol_version": PROTOCOL_VERSION,
@@ -393,6 +419,7 @@ def new_event(
         | ToolConfirmationRequested
         | ToolConfirmationResolved
         | ToolResult
-        | SystemError,
+        | SystemError
+        | WatcherNotification,
         parse_event(values),
     )

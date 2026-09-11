@@ -124,6 +124,30 @@ class PathPolicy:
             raise ToolPlatformError("Plik docelowy już istnieje; nadpisywanie jest wyłączone.")
         return destination
 
+    def watch_path(self, value: str) -> Path:
+        """Canonicalize one explicit future/current file path without writing it."""
+        lexical = self._absolute(value)
+        if lexical.name in {"", ".", ".."}:
+            raise ToolPlatformError("Obserwacja wymaga nazwy pliku.")
+        root = self._matching_root(lexical)
+        self._reject_links(root, lexical.parent)
+        try:
+            parent = lexical.parent.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise ToolPlatformError("Folder obserwowanego pliku nie istnieje.") from error
+        if not self._inside_roots(parent):
+            raise ToolPlatformError("Ścieżka wykracza poza dozwolony obszar użytkownika.")
+        candidate = parent / lexical.name
+        if candidate.exists() or candidate.is_symlink():
+            self._reject_links(root, candidate)
+            try:
+                candidate = candidate.resolve(strict=True)
+            except (OSError, RuntimeError) as error:
+                raise ToolPlatformError("Obserwowany plik nie jest dostępny.") from error
+            if not self._inside_roots(candidate):
+                raise ToolPlatformError("Ścieżka wykracza poza dozwolony obszar użytkownika.")
+        return candidate
+
     def _resolve_existing(self, value: str) -> Path:
         lexical = self._absolute(value)
         root = self._matching_root(lexical)

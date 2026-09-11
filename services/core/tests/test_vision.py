@@ -276,6 +276,7 @@ def test_oversized_capture_is_downscaled_and_encoded_within_budget() -> None:
     assert outcome.result.available is True
     assert outcome.result.normalized_width == 640
     assert outcome.result.normalized_height == 360
+    assert outcome.result.encoded_image_bytes is not None
     assert outcome.result.encoded_image_bytes <= 180_000
     assert raw.cleared is True
     assert outcome.image is not None
@@ -345,6 +346,7 @@ def test_pending_store_is_single_use_and_clears_replaced_or_removed_images() -> 
         claimed = store.take(second_id)
         assert claimed is not None
         assert store.take(second_id) is None
+        assert claimed.image is not None
         claimed.image.clear()
     finally:
         store.close()

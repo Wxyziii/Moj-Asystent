@@ -217,6 +217,17 @@ Do log:
 - performance timing;
 - watcher triggers.
 
+Milestone 11 watchers require an explicit `explicit_intent` request, accept
+only the six typed categories, canonicalize file targets through the existing
+root/reparse-point policy and bind process/window identities to stable
+metadata. The scheduler is capped at 32 active definitions and four
+concurrent checks. It persists only bounded structured state and 256 event
+records; screenshots, raw telemetry and full logs are excluded. An ambiguous
+identity or provider failure stops the watcher, and a watcher event never
+authorizes a tool or runs a routine. The typed watcher-management tools mark
+creation and persistent changes as sensitive, so the normal exact-target
+confirmation flow still applies even when a model proposes the definition.
+
 Do not log by default:
 
 - raw microphone audio;

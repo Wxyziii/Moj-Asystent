@@ -186,10 +186,11 @@ Later phase:
 - editable/deleteable stored memory through settings;
 - no screenshot/audio storage by default.
 
-Milestone 10 provides explicit local SQLite storage with opt-in completed
+Milestone 10–11 provide explicit local SQLite storage with opt-in completed
 conversation history, bounded deterministic retrieval, secret-like value
-rejection and separate review/delete/reset controls. Watcher definitions and
-event history remain future work.
+rejection, review/delete/reset controls, typed watcher definitions and a
+bounded watcher event history. Watchers remain explicit and notification-only;
+they do not execute routines automatically.
 
 Start structured; add embeddings only if needed.
 

@@ -6,6 +6,18 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 11 deterministic proactive watchers for windows, processes, files,
+  resources, builds and downloads, with explicit authenticated lifecycle APIs.
+- Added confirmation-gated typed watcher-management tools so explicit Polish
+  requests can create and control validated watcher definitions.
+- Bounded asyncio watcher scheduler with restart restoration, pause/resume,
+  expiry, identity checks, resource hysteresis and duplicate suppression.
+- SQLite schema v2 watcher definitions and 256-entry structured event history,
+  plus Protocol 1.3 `watcher.notification` events and Polish overlay/settings
+  controls.
+- Watcher security tests cover explicit intent, path policy, cancellation,
+  persistence and bounded history; no watcher event executes a tool or routine.
+
 - Milestone 10 local persistence: versioned SQLite schema for explicit
   preferences, memories, aliases, opt-in completed conversation history and
   bounded typed routines.

@@ -242,6 +242,21 @@ Decision: background watchers use deterministic OS/process/file/resource events 
 
 Reason: lower CPU/GPU use, better privacy and more predictable behavior than constant LLM/vision monitoring.
 
+## 2026-09-11 — Watchers share the local SQLite lifecycle
+
+Decision: Milestone 11 stores watcher definitions, last observations and a
+bounded event history in the existing versioned SQLite database. One
+asyncio-owned scheduler restores only revalidated active watchers, caps
+concurrency and publishes meaningful transitions as authenticated Protocol 1.3
+notifications. Watcher events are notification-only and cannot authorize tools
+or trigger routines. Explicit watcher management is exposed as confirmation-
+gated typed ToolEngine definitions through a small event-loop bridge; watcher
+operations are never executed from the observation callback itself.
+
+Reason: a single lifecycle and migration path keeps restart, cancellation,
+privacy deletion and fail-closed identity validation consistent with Milestone
+10 without introducing a second service or database.
+
 ## 2026-09-09 — GitHub repository is source of truth
 
 Decision: architecture, roadmap, decisions and changelog live in versioned repository docs.

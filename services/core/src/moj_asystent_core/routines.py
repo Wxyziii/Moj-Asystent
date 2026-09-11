@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,8 +16,29 @@ from .memory import (
     RoutineSummary,
     SQLiteMemoryStore,
 )
-from .tools.engine import ToolEngine
-from .tools.models import ToolStatus
+from .tools.models import JsonValue, ToolExecutionResult, ToolStatus
+
+
+class RoutineToolRegistry(Protocol):
+    def validate(
+        self, name: str, arguments: dict[str, JsonValue], /
+    ) -> tuple[object, BaseModel]: ...
+
+
+class RoutineToolEngine(Protocol):
+    @property
+    def registry(self) -> RoutineToolRegistry: ...
+
+    async def execute(
+        self,
+        *,
+        operation_id: UUID,
+        call_id: UUID,
+        tool_name: str,
+        arguments: dict[str, JsonValue],
+    ) -> ToolExecutionResult: ...
+
+    def cancel_operation(self, operation_id: UUID) -> None: ...
 
 
 class RoutineModel(BaseModel):
@@ -51,7 +72,7 @@ class RoutineCreateRequest:
 
 
 class RoutineService:
-    def __init__(self, store: SQLiteMemoryStore, engine: ToolEngine) -> None:
+    def __init__(self, store: SQLiteMemoryStore, engine: RoutineToolEngine) -> None:
         self._store = store
         self._engine = engine
         self._active: dict[UUID, asyncio.Event] = {}

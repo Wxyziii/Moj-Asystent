@@ -12,6 +12,7 @@ import { useState, type FormEvent } from "react";
 import type {
   ModelStatusChanged,
   ToolConfirmationRequested,
+  WatcherNotification,
 } from "@moj-asystent/protocol";
 import {
   assistantStates,
@@ -45,6 +46,9 @@ interface ConversationProps {
   onSelectRegion?: () => void;
   onRemoveContext?: () => void;
   onConfirmationDecision: (decision: ToolConfirmationDecision) => void;
+  notifications?: WatcherNotification["payload"][];
+  onDismissNotification?: (notificationId: string) => void;
+  onStopNotification?: (notificationId: string, watcherId: string) => void;
 }
 
 export function Conversation({
@@ -68,6 +72,9 @@ export function Conversation({
   onSelectRegion,
   onRemoveContext,
   onConfirmationDecision,
+  notifications = [],
+  onDismissNotification = () => undefined,
+  onStopNotification = () => undefined,
 }: ConversationProps) {
   const [prompt, setPrompt] = useState("");
   const isWorking = ["thinking", "transcribing", "speaking"].includes(state);
@@ -154,6 +161,44 @@ export function Conversation({
           <span>Ten komputer</span>
           <span>{modelLabel}</span>
         </div>
+        {notifications.map((notification) => (
+          <article
+            className="watcher-notification"
+            role="status"
+            key={notification.notification_id}
+          >
+            <div>
+              <strong>{notification.title}</strong>
+              <p>{notification.message}</p>
+              <small>{notification.target}</small>
+            </div>
+            <div className="watcher-notification__actions">
+              {notification.actions.includes("later") && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onDismissNotification(notification.notification_id)
+                  }
+                >
+                  Później
+                </button>
+              )}
+              {notification.actions.includes("stop") && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onStopNotification(
+                      notification.notification_id,
+                      notification.watcher_id,
+                    )
+                  }
+                >
+                  Zatrzymaj
+                </button>
+              )}
+            </div>
+          </article>
+        ))}
         <button
           type="button"
           className="region-select-button"

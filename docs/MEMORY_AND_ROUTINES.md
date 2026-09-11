@@ -16,6 +16,8 @@ explicit transactions.
 
 The v1 schema contains settings, completed conversation messages, preferences,
 approved memories, app/project aliases and routine definitions/steps. The
+Milestone 11 migration to schema v2 adds watcher definitions and bounded
+structured watcher event history without creating another database. The
 existing tool-permission policy remains a separate validated JSON file: its
 security semantics and fail-closed recovery are already established, and
 mixing policy writes with user memory deletion would make privacy controls less
@@ -66,4 +68,8 @@ toggle history, clear history, review/delete individual durable memories, or
 clear all memories and aliases. Clearing memories intentionally leaves
 conversation history and routines untouched; those have separate controls.
 
-Milestone 11 watchers and proactive memory writes are not part of this design.
+Milestone 11 adds watcher definitions and bounded structured watcher event
+history to this same database. Watchers are explicit, cancellable and
+deterministic; they never become an automatic memory-extraction path. See
+[`WATCHERS.md`](WATCHERS.md) for supported categories, lifecycle and privacy
+limits.
