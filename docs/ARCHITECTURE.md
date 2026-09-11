@@ -109,24 +109,37 @@ buffers after every terminal path.
 
 ### 4. Context engine
 
-Build one normalized context snapshot from available sources:
+Build one normalized, request-scoped context snapshot from available sources:
 
 ```json
 {
-  "active_application": "Visual Studio Code",
-  "window_title": "resolver.ts",
-  "ui": {},
-  "selection": null,
-  "screenshot_available": true,
-  "system": {
-    "cpu_percent": 31,
-    "gpu_percent": 62,
-    "vram_used_mb": 5200
-  }
+  "context_id": "uuid",
+  "captured_at": "2026-09-11T12:00:00Z",
+  "active_window": { "process_name": "Code.exe", "title": "resolver.ts" },
+  "ui_tree": { "nodes": [], "truncated": false },
+  "focused_text": { "available": false },
+  "screenshot": { "available": false, "planned_milestone": 8 },
+  "timings": { "total_ms": 42 }
 }
 ```
 
-Do not collect every field for every request. Context providers should be lazy and request-scoped.
+Do not collect every field for every request. Context providers are lazy and
+invoked through typed tools only when the user's request requires current-window
+information. Milestone 7 uses a dedicated multithreaded-apartment worker for all
+UI Automation objects and calls. The worker owns COM initialization, has a
+bounded request queue, checks cancellation during traversal and is closed during
+core shutdown. COM-backed elements never cross the worker boundary.
+
+Snapshots carry source provenance, an immutable window identity, a unique
+context ID, timestamp, truncation flags and per-stage timings. The active window
+is checked again after UI traversal; if its identity changed, the old UI tree and
+selection are discarded. Node count, depth, individual text and aggregate model
+payload are bounded. Password controls are stripped, configured applications and
+title fragments are excluded before UI traversal, and raw context is neither
+persisted nor written to normal logs. See `WINDOWS_CONTEXT.md`.
+
+Screenshot capture and image-model input remain explicit Milestone 8 work. The
+current `inspect_screen` tool returns a truthful typed unavailable result.
 
 ### 5. Orchestrator
 
@@ -183,7 +196,9 @@ Do not make `run_any_shell_command` a normal tool.
 
 The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation, call and tool identity under Protocol `1.3`.
 
-`read_ui_tree` and `inspect_screen` currently expose typed provider seams but report unavailable. Their Windows context implementations remain Milestone 7.
+`get_active_window` and `read_ui_tree` use the Milestone 7 context provider.
+`inspect_screen` keeps its typed provider seam but reports unavailable until the
+Milestone 8 capture and vision path exists.
 
 ### 8. Permission engine
 

@@ -40,6 +40,7 @@ export function useAssistantUi() {
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string>();
   const [toolActivity, setToolActivity] = useState<string>();
+  const [contextChip, setContextChip] = useState<string>();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
     const savedMode = window.localStorage.getItem("moj-asystent.overlay-mode");
     return savedMode === "expanded" || savedMode === "settings"
@@ -60,12 +61,19 @@ export function useAssistantUi() {
         return;
       }
       if (event.type === "tool.execution.status") {
+        const contextActivity =
+          event.payload.tool_name === "read_ui_tree"
+            ? "Odczytuję interfejs…"
+            : event.payload.tool_name === "get_active_window"
+              ? "Analizuję aktywne okno…"
+              : undefined;
         setToolActivity(
-          event.payload.status === "executing"
-            ? `Wykonuję: ${event.payload.tool_name}`
-            : event.payload.status === "confirmation_required"
-              ? "Czekam na Twoją zgodę"
-              : `Sprawdzam: ${event.payload.tool_name}`,
+          contextActivity ??
+            (event.payload.status === "executing"
+              ? `Wykonuję: ${event.payload.tool_name}`
+              : event.payload.status === "confirmation_required"
+                ? "Czekam na Twoją zgodę"
+                : `Sprawdzam: ${event.payload.tool_name}`),
         );
         return;
       }
@@ -87,6 +95,14 @@ export function useAssistantUi() {
       }
       if (event.type === "tool.result") {
         setToolActivity(event.payload.message);
+        if (
+          event.payload.status === "success" &&
+          ["get_active_window", "read_ui_tree"].includes(
+            event.payload.tool_name,
+          )
+        ) {
+          setContextChip("Aktywne okno · kontekst gotowy");
+        }
         setPendingConfirmation((current) =>
           current?.call_id === event.payload.call_id ? undefined : current,
         );
@@ -97,6 +113,7 @@ export function useAssistantUi() {
         setPendingConfirmation(undefined);
         setConfirmationError(undefined);
         setToolActivity(undefined);
+        setContextChip(undefined);
         setMessages((current) =>
           [
             ...current.filter(
@@ -149,6 +166,7 @@ export function useAssistantUi() {
             if (status !== "connected") {
               setPendingConfirmation(undefined);
               setConfirmationBusy(false);
+              setContextChip(undefined);
             }
           },
           (state) => {
@@ -259,6 +277,8 @@ export function useAssistantUi() {
     confirmationBusy,
     confirmationError,
     toolActivity,
+    contextChip,
+    removeContext: () => setContextChip(undefined),
     decideConfirmation,
   };
 }

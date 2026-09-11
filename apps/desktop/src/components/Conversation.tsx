@@ -1,9 +1,11 @@
 import {
   ArrowUp,
   ChevronDown,
+  Eye,
   Mic,
   MoreHorizontal,
   Square,
+  X,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type {
@@ -37,6 +39,8 @@ interface ConversationProps {
   confirmationBusy: boolean;
   confirmationError?: string;
   toolActivity?: string;
+  contextChip?: string;
+  onRemoveContext?: () => void;
   onConfirmationDecision: (decision: ToolConfirmationDecision) => void;
 }
 
@@ -56,6 +60,8 @@ export function Conversation({
   confirmationBusy,
   confirmationError,
   toolActivity,
+  contextChip,
+  onRemoveContext,
   onConfirmationDecision,
 }: ConversationProps) {
   const [prompt, setPrompt] = useState("");
@@ -143,6 +149,19 @@ export function Conversation({
           <span>Ten komputer</span>
           <span>{modelLabel}</span>
         </div>
+        {contextChip && (
+          <div className="context-chip" role="status">
+            <Eye size={14} aria-hidden="true" />
+            <span>{contextChip}</span>
+            <button
+              type="button"
+              onClick={onRemoveContext}
+              aria-label="Usuń kontekst aktywnego okna"
+            >
+              <X size={13} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         {messages.length === 0 ? (
           <article className="message message--assistant">
             <p className="message__label">Mój Asystent</p>

@@ -6,6 +6,13 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 7 request-scoped Windows context with best-effort active-window metadata, bounded UI Automation traversal and selected/focused text where supported.
+- Dedicated MTA/COM worker lifecycle with bounded queueing, cancellation, timeout handling and stale-window result rejection.
+- Typed ephemeral context snapshots with provenance, unique IDs, timestamps, timing data and explicit unavailable/truncation states.
+- Password-control redaction, sensitive-application/title exclusions, privacy-safe logging and configurable collection limits.
+- On-demand `get_active_window` / `read_ui_tree` model tools and a restrained removable context indicator in the desktop conversation.
+- Windows context regression coverage plus safe manual Explorer and Notepad validation; screenshot/vision remains explicitly deferred to Milestone 8.
+
 - Milestone 6 typed tool engine with the exact 18 planned read, safe-action and confirmation-required capabilities; Windows UI-tree/screen tools remain honest Milestone 7 provider seams.
 - Strict Pydantic tool input/output validation, model-facing JSON Schemas, deterministic implementations, bounded execution and structured results returned to Qwen before final responses.
 - User-local fail-closed `read` / `write.safe` / `sensitive` policy plus expiring, single-use confirmations bound to exact operation, call, tool and arguments.

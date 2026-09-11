@@ -284,10 +284,9 @@ The model can select typed tools, the backend validates them, and the overlay pr
 - active process/window tracking;
 - Windows UI Automation reader;
 - selected/control text extraction where possible;
-- active-window screenshot capture;
-- optional user-selected screen region capture;
 - unified context object;
-- context minimization before prompting the model.
+- context minimization before prompting the model;
+- typed unavailable seam for screenshot inspection, implemented in Phase 8.
 
 ## Priority order
 
@@ -306,6 +305,7 @@ Questions like `Co to za błąd?` or `Dlaczego to nie działa?` can use current-
 
 ## Build
 
+- active-window and optional user-selected region capture;
 - screenshot normalization/resizing;
 - Qwen3.5 image input;
 - region-selection flow;

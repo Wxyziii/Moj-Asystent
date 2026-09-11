@@ -125,6 +125,22 @@ Loopback plus per-launch credentials protects against ordinary browser-origin re
 - never claim perfect secret redaction;
 - future cloud providers must never receive screenshots silently.
 
+Milestone 7 collects structured Windows context only when a typed tool is
+requested. UI Automation traversal is bounded by node count, depth, text length,
+aggregate payload, queue capacity and time. Password controls never expose their
+value, text or selection through the context model. Built-in password-manager
+process exclusions and configurable exact-process/title-fragment exclusions are
+evaluated before UI traversal; excluded window titles and executable paths are
+not returned. Window identity is checked after traversal so content collected
+from a window that lost focus is discarded.
+
+Context is process-local and ephemeral. Normal logs contain only operational
+metadata such as process name, node count, truncation, elapsed time and error
+class—not window titles, selected text or UI content. Accessibility metadata is
+not a perfect secret classifier, and same-user malware remains outside this
+boundary; users should exclude any additional sensitive applications. Screenshot
+capture and vision are not implemented in Milestone 7.
+
 ## Microphone privacy
 
 - wake-word processing local;

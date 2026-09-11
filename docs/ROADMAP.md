@@ -162,16 +162,23 @@ Completed scope:
 
 ## Milestone 7 — Screen/Windows context
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
 - active-window metadata;
 - UI Automation;
-- screenshot provider;
-- region capture;
 - context minimization;
 - sensitive-app exclusions.
+
+Completed scope:
+
+- best-effort active-window process, executable, title, class, bounds and monitor metadata with explicit unavailable fields;
+- bounded, cancellable Windows UI Automation traversal on a dedicated MTA worker, including focused/selected text where supported;
+- typed, ephemeral context snapshots with provenance, unique IDs, timestamps, timings, truncation and foreground-window staleness checks;
+- password-control redaction, built-in and configurable exclusions, privacy-safe logs and a global disable switch;
+- on-demand Qwen tool use plus a restrained, removable desktop context indicator;
+- truthful unavailable screenshot seam; active-window/region image capture remains Milestone 8.
 
 ## Milestone 8 — Vision and diagnostics
 

@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Typed tools and permissions",
-    "status": "Milestone 6 complete — validated tools, explicit permissions and secure confirmation flow",
+    "stage": "Structured Windows context",
+    "status": "Milestone 7 complete — bounded active-window and UI Automation context",
     "updated": "2026-09-11"
   },
   "principles": [
@@ -71,8 +71,8 @@
     {
       "id": 7,
       "name": "Screen context",
-      "status": "planned",
-      "description": "Active window, UI Automation, screenshots and region selection."
+      "status": "done",
+      "description": "Request-scoped active-window metadata, bounded UI Automation, focused text and sensitive-app exclusions."
     },
     {
       "id": 8,
@@ -100,6 +100,17 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "title": "Milestone 7: structured Windows context",
+      "items": [
+        "Added best-effort active-window metadata and bounded Windows UI Automation on a dedicated COM worker.",
+        "Added typed ephemeral snapshots with provenance, IDs, timestamps, timings, truncation and stale-window rejection.",
+        "Added password-field redaction, sensitive-app exclusions, privacy-safe logs and configurable hard limits.",
+        "Connected on-demand context tools to Qwen and added a restrained removable context indicator in the desktop overlay.",
+        "Kept screenshot capture and vision explicitly unavailable until Milestone 8."
+      ]
+    },
     {
       "date": "2026-09-11",
       "title": "Post-Milestone-6 security review",

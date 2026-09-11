@@ -32,6 +32,8 @@ export default function App() {
     confirmationBusy,
     confirmationError,
     toolActivity,
+    contextChip,
+    removeContext,
     decideConfirmation,
   } = useAssistantUi();
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -130,6 +132,8 @@ export default function App() {
         confirmationBusy={confirmationBusy}
         confirmationError={confirmationError}
         toolActivity={toolActivity}
+        contextChip={contextChip}
+        onRemoveContext={removeContext}
         onConfirmationDecision={(decision) => void decideConfirmation(decision)}
       />
     );

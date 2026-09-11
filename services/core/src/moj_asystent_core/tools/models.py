@@ -71,23 +71,14 @@ class RunningProcessesOutput(StrictModel):
     truncated: bool
 
 
-class ActiveWindowOutput(StrictModel):
-    available: bool
-    handle: Annotated[StrictInt, Field(ge=0)] | None = None
-    pid: Annotated[StrictInt, Field(gt=0)] | None = None
-    title: Annotated[str, Field(max_length=512)] | None = None
-    application: Annotated[str, Field(max_length=260)] | None = None
-    reason: Annotated[str, Field(max_length=256)] | None = None
-
-
 class ContextProviderArguments(StrictModel):
     reason: Annotated[str, Field(min_length=1, max_length=256)]
 
 
-class ContextUnavailableOutput(StrictModel):
+class ScreenInspectionUnavailableOutput(StrictModel):
     available: Literal[False] = False
-    reason: Annotated[str, Field(min_length=1, max_length=256)]
-    planned_milestone: Literal[7]
+    reason: Literal["vision_not_implemented"] = "vision_not_implemented"
+    planned_milestone: Literal[8] = 8
 
 
 class PathArguments(StrictModel):

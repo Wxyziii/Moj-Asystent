@@ -25,6 +25,7 @@ from .audio_providers import (
     list_input_devices,
 )
 from .auth import SessionCredential
+from .context import ContextSettings
 from .conversation import LocalConversationService, TextChatController
 from .llm import (
     DEFAULT_MODEL,
@@ -139,6 +140,7 @@ class CoreSettings:
     ollama_url: str = DEFAULT_OLLAMA_URL
     llm_model: str = DEFAULT_MODEL
     permission_policy_path: Path = field(default_factory=default_policy_path)
+    context: ContextSettings = field(default_factory=ContextSettings)
 
     def __post_init__(self) -> None:
         if not ipaddress.ip_address(self.host).is_loopback:
@@ -168,10 +170,13 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         )
     wake_provider = OpenWakeWordProvider(config.wake_model_path, config.development_wake_model)
     provider: LanguageModelProvider = app.state.language_model_provider
+    tool_platform = app.state.tool_platform or WindowsToolPlatform(
+        context_settings=app.state.settings.context
+    )
     tool_engine: ToolEngine = build_tool_engine(
         runtime,
         policy_path=app.state.settings.permission_policy_path,
-        platform=app.state.tool_platform,
+        platform=tool_platform,
     )
     app.state.tool_engine = tool_engine
     conversation = LocalConversationService(runtime, provider, tool_engine=tool_engine)

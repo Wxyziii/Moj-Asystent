@@ -55,3 +55,27 @@ it("renders sensitive confirmation as a separate exact action card", () => {
 it("shows persistent approval only when the core explicitly permits it", () => {
   expect(renderConfirmation(true)).toContain("Zawsze zezwalaj");
 });
+
+it("shows a removable context chip without exposing the UI tree", () => {
+  const html = renderToStaticMarkup(
+    <Conversation
+      state="thinking"
+      definition={assistantStateDefinitions.thinking}
+      onCompact={vi.fn()}
+      onSettings={vi.fn()}
+      onPreviewState={vi.fn()}
+      coreStatus="connected"
+      stateSource="core"
+      messages={[]}
+      onToggleListening={vi.fn()}
+      onSendMessage={async () => true}
+      confirmationBusy={false}
+      contextChip="Aktywne okno · kontekst gotowy"
+      onRemoveContext={vi.fn()}
+      onConfirmationDecision={vi.fn()}
+    />,
+  );
+
+  expect(html).toContain("Aktywne okno · kontekst gotowy");
+  expect(html).toContain('aria-label="Usuń kontekst aktywnego okna"');
+});

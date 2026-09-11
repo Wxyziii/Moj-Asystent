@@ -120,6 +120,11 @@ When vision is used, make it visible:
 
 If a screenshot/region is captured, show a small preview or context chip and allow the user to remove it before re-running a request.
 
+For structured active-window/UI Automation context, show a restrained grayscale
+chip such as `Aktywne okno · kontekst gotowy`. It indicates that request-scoped
+context was used without exposing raw UI text and can be removed from the current
+view. Screenshot previews remain part of the later vision flow.
+
 ## Region selection
 
 Fallback hotkey/menu command:

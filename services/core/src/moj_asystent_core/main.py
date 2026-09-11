@@ -7,6 +7,7 @@ import uvicorn
 from .api import CoreSettings, create_app
 from .audio import AudioConfig
 from .auth import SessionCredential
+from .context import ContextSettings
 
 
 def create_server(settings: CoreSettings) -> uvicorn.Server:
@@ -42,5 +43,6 @@ def main() -> None:
             audio_enabled=True,
             ollama_url=os.environ.get("MOJ_ASYSTENT_OLLAMA_URL", "http://127.0.0.1:11434"),
             llm_model=os.environ.get("MOJ_ASYSTENT_LLM_MODEL", "qwen3.5:4b"),
+            context=ContextSettings.from_environment(),
         )
     ).run()

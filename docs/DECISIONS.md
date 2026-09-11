@@ -147,6 +147,20 @@ Order:
 
 No continuous full-screen vision inference.
 
+## 2026-09-11 — Request-scoped Windows context on a dedicated COM worker
+
+Decision: Milestone 7 provides structured active-window and Windows UI
+Automation context only on demand through typed tools. All UI Automation access
+runs on one bounded, dedicated MTA worker that owns COM objects for their entire
+lifetime. Snapshot traversal is bounded and cancellable, and stale results are
+discarded when the foreground-window identity changes.
+
+Screenshot and selected-region capture move together with image normalization
+and vision to Milestone 8. Until then, `inspect_screen` returns a typed,
+truthful unavailable result. This keeps the privacy boundary explicit and avoids
+shipping image collection without its user-visible capture and model-consumption
+flow.
+
 ## 2026-09-09 — Typed tools, not arbitrary shell
 
 Decision: ordinary assistant actions use typed allowlisted tools.

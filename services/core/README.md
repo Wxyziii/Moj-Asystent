@@ -27,8 +27,7 @@ core. Shutdown cancels active WebSocket session work before lifecycle teardown.
 Milestone 3 includes real sounddevice, openWakeWord, Silero VAD, faster-whisper
 and Piper adapters. Model weights stay in user caches/outside Git. Set
 `MOJ_ASYSTENT_TTS_VOICE_PATH` to a Polish Piper `.onnx` voice when it is not in
-the default local application model directory. Screen, tool and persistence
-implementations remain out of scope.
+the default local application model directory.
 
 Milestone 4 adds authenticated `/onboarding/*` endpoints for name scoring,
 microphone calibration, bounded PCM samples, cancellable local ONNX training,
@@ -46,8 +45,15 @@ Milestone 6 adds the central typed tool registry, local permission policy,
 structured Ollama tool calling and Protocol 1.3 tool lifecycle events. Read
 tools run automatically, `write.safe` defaults to asking, and sensitive tools
 always require an exact short-lived confirmation. File access defaults to the
-user's home directory. `read_ui_tree` and `inspect_screen` intentionally report
-unavailable until their providers are implemented in Milestone 7.
+user's home directory.
+
+Milestone 7 implements request-scoped active-window metadata, bounded Windows UI
+Automation traversal and selected/focused text where the accessibility provider
+exposes it. A dedicated MTA worker owns every COM/UIA object; core shutdown closes
+it. Context snapshots are ephemeral, identity-checked, size-limited and filtered
+for password controls plus configured application/title exclusions. Screenshot
+capture and `inspect_screen` remain unavailable until Milestone 8. Configuration
+is documented in `../../docs/WINDOWS_CONTEXT.md`.
 
 ## Responsibilities
 

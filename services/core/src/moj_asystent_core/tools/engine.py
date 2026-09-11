@@ -11,13 +11,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 
+from ..context import ActiveWindowSnapshot, DesktopContextSnapshot
 from .confirmations import ConfirmationManager, ConfirmationRejected, ConfirmationRequest
 from .models import (
     ActionOutput,
-    ActiveWindowOutput,
     ConfirmationDecision,
     ContextProviderArguments,
-    ContextUnavailableOutput,
     DeleteFileArguments,
     FindProcessByPortArguments,
     FindProcessByPortOutput,
@@ -38,6 +37,7 @@ from .models import (
     RestartProcessArguments,
     RunningProcessesArguments,
     RunningProcessesOutput,
+    ScreenInspectionUnavailableOutput,
     SetApplicationVolumeArguments,
     SetVolumeArguments,
     SystemStatsOutput,
@@ -91,6 +91,7 @@ class ToolDefinition:
     audit_category: str
     confirmation: Callable[[BaseModel], ConfirmationPresentation]
     prepare: Callable[[BaseModel], BaseModel] = lambda value: value
+    cancel: Callable[[], None] = lambda: None
 
     def model_definition(self) -> ModelToolDefinition:
         parameters = cast(dict[str, JsonValue], self.input_model.model_json_schema())
@@ -142,11 +143,13 @@ class ToolEngine:
         policy: PermissionPolicyStore,
         confirmations: ConfirmationManager,
         events: ToolEventSink,
+        cleanup: Callable[[], None] = lambda: None,
     ) -> None:
         self.registry = registry
         self.policy = policy
         self.confirmations = confirmations
         self.events = events
+        self._cleanup = cleanup
 
     async def execute(
         self,
@@ -268,12 +271,14 @@ class ToolEngine:
                 output=cast(dict[str, JsonValue], checked.model_dump(mode="json")),
             )
         except TimeoutError:
+            definition.cancel()
             result = ToolExecutionResult(
                 tool_name=definition.name,
                 status=ToolStatus.TIMEOUT,
                 message="Narzędzie przekroczyło bezpieczny limit czasu.",
             )
         except asyncio.CancelledError:
+            definition.cancel()
             result = ToolExecutionResult(
                 tool_name=definition.name,
                 status=ToolStatus.CANCELLED,
@@ -314,6 +319,7 @@ class ToolEngine:
 
     def shutdown(self) -> None:
         self.confirmations.shutdown()
+        self._cleanup()
 
     def _publish_result(
         self, operation_id: UUID, call_id: UUID, result: ToolExecutionResult
@@ -336,6 +342,7 @@ def build_tool_engine(
         PermissionPolicyStore(policy_path),
         ConfirmationManager(),
         events,
+        resolved_platform.close,
     )
 
 
@@ -356,6 +363,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
         details: Callable[[BaseModel], tuple[tuple[str, str], ...]] = lambda _: (),
         risk: str = "Działanie zmieni stan komputera.",
         prepare: Callable[[BaseModel], BaseModel] = lambda value: value,
+        cancel: Callable[[], None] = lambda: None,
     ) -> ToolDefinition:
         return ToolDefinition(
             name=name,
@@ -375,6 +383,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
                 risk=risk,
             ),
             prepare=prepare,
+            cancel=cancel,
         )
 
     def prepare_move(value: BaseModel) -> MoveFileArguments:
@@ -410,7 +419,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             "get_active_window",
             "Pobierz podstawową tożsamość aktywnego okna bez drzewa UI.",
             NoArguments,
-            ActiveWindowOutput,
+            ActiveWindowSnapshot,
             PermissionLevel.READ,
             lambda _: platform.get_active_window(),
             category="window.read",
@@ -418,21 +427,26 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
         ),
         definition(
             "read_ui_tree",
-            "Odczytaj drzewo dostępności aktywnego okna, gdy dostawca Milestone 7 jest dostępny.",
+            "Odczytaj ograniczony kontekst i drzewo dostępności aktywnego okna. "
+            "Używaj tylko, gdy pytanie dotyczy bieżącego interfejsu, zaznaczenia "
+            "albo widocznego tekstu.",
             ContextProviderArguments,
-            ContextUnavailableOutput,
+            DesktopContextSnapshot,
             PermissionLevel.READ,
-            lambda _: platform.unavailable_context("Drzewo UI"),
+            lambda value: platform.read_ui_tree(cast(ContextProviderArguments, value)),
+            timeout=3,
             category="context.read",
             action="Odczytać drzewo UI?",
+            cancel=platform.cancel_context,
         ),
         definition(
             "inspect_screen",
-            "Sprawdź ekran, gdy jawny dostawca obrazu Milestone 7 jest dostępny.",
+            "Sprawdź dostępność analizy obrazu. Zrzuty ekranu i analiza obrazu "
+            "pojawią się dopiero w Milestone 8.",
             ContextProviderArguments,
-            ContextUnavailableOutput,
+            ScreenInspectionUnavailableOutput,
             PermissionLevel.READ,
-            lambda _: platform.unavailable_context("Inspekcja ekranu"),
+            lambda value: platform.inspect_screen(cast(ContextProviderArguments, value)),
             category="context.read",
             action="Sprawdzić ekran?",
         ),

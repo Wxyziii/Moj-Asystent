@@ -12,10 +12,17 @@ from typing import Final
 
 import psutil
 
+from ..context import (
+    ActiveWindowSnapshot,
+    ContextSettings,
+    DesktopContextSnapshot,
+    UiaWorker,
+    WindowsContextService,
+)
+from ..windows_context import PywinautoUiaBackend, Win32WindowMetadataProvider
 from .models import (
     ActionOutput,
-    ActiveWindowOutput,
-    ContextUnavailableOutput,
+    ContextProviderArguments,
     DeleteFileArguments,
     DirectoryEntry,
     FindProcessByPortArguments,
@@ -34,6 +41,7 @@ from .models import (
     RestartProcessArguments,
     RunningProcessesArguments,
     RunningProcessesOutput,
+    ScreenInspectionUnavailableOutput,
     SetApplicationVolumeArguments,
     SetVolumeArguments,
     SystemStatsOutput,
@@ -172,9 +180,19 @@ class WindowsToolPlatform:
         *,
         path_policy: PathPolicy | None = None,
         approved_restart_paths: frozenset[Path] | None = None,
+        context_service: WindowsContextService | None = None,
+        context_settings: ContextSettings | None = None,
     ) -> None:
         self.paths = path_policy or PathPolicy()
         self.approved_restart_paths = approved_restart_paths or frozenset()
+        settings = context_settings or ContextSettings()
+        self.context = context_service or WindowsContextService(
+            Win32WindowMetadataProvider(),
+            UiaWorker(PywinautoUiaBackend),
+            limits=settings.limits,
+            exclusions=settings.exclusions,
+            enabled=settings.enabled,
+        )
 
     def get_system_stats(self) -> SystemStatsOutput:
         memory = psutil.virtual_memory()
@@ -222,36 +240,20 @@ class WindowsToolPlatform:
             processes=tuple(processes[: args.limit]), truncated=len(processes) > args.limit
         )
 
-    def get_active_window(self) -> ActiveWindowOutput:
-        if sys.platform != "win32":
-            return ActiveWindowOutput(
-                available=False, reason="Aktywne okno jest dostępne tylko w Windows."
-            )
-        user32 = ctypes.windll.user32
-        handle = int(user32.GetForegroundWindow())
-        if not handle:
-            return ActiveWindowOutput(available=False, reason="Nie znaleziono aktywnego okna.")
-        pid = ctypes.c_ulong()
-        user32.GetWindowThreadProcessId(handle, ctypes.byref(pid))
-        length = min(int(user32.GetWindowTextLengthW(handle)), 511)
-        buffer = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(handle, buffer, length + 1)
-        try:
-            application = psutil.Process(pid.value).name()
-        except (psutil.AccessDenied, psutil.NoSuchProcess):
-            application = None
-        return ActiveWindowOutput(
-            available=True,
-            handle=handle,
-            pid=pid.value,
-            title=buffer.value,
-            application=application,
-        )
+    def get_active_window(self) -> ActiveWindowSnapshot:
+        return self.context.active_window()
 
-    def unavailable_context(self, name: str) -> ContextUnavailableOutput:
-        raise ToolUnavailableError(
-            f"{name} wymaga dostawcy kontekstu Windows zaplanowanego na Milestone 7."
-        )
+    def read_ui_tree(self, args: ContextProviderArguments) -> DesktopContextSnapshot:
+        return self.context.capture(args.reason)
+
+    def inspect_screen(self, _args: ContextProviderArguments) -> ScreenInspectionUnavailableOutput:
+        return ScreenInspectionUnavailableOutput()
+
+    def cancel_context(self) -> None:
+        self.context.cancel()
+
+    def close(self) -> None:
+        self.context.close()
 
     def list_directory(self, args: ListDirectoryArguments) -> ListDirectoryOutput:
         directory = self.paths.existing_directory(args.path)
