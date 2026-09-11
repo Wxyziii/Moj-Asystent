@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from uuid import uuid4
@@ -167,3 +168,56 @@ def test_core_rejects_reused_session_and_action_credentials() -> None:
         assert "distinct" in str(error)
     else:
         raise AssertionError("Core accepted one credential for both trust boundaries")
+
+
+def test_action_credential_cannot_access_the_ordinary_core_api(tmp_path: Path) -> None:
+    settings = CoreSettings(
+        credential=SessionCredential.from_value(SESSION_TOKEN),
+        action_credential=SessionCredential.from_value(ACTION_TOKEN),
+        permission_policy_path=tmp_path / "permissions.json",
+    )
+    app = create_app(settings, ToolProvider(tmp_path / "unused.txt"), RecordingPlatform(tmp_path))
+
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        assert client.get("/health", headers=ACTION_AUTH).status_code == 401
+        assert client.post("/chat/cancel", headers=ACTION_AUTH).status_code == 401
+
+
+def test_last_websocket_disconnect_invalidates_an_unseen_confirmation(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "document.txt"
+    target.write_text("test", encoding="utf-8")
+    platform = RecordingPlatform(tmp_path)
+    settings = CoreSettings(
+        credential=SessionCredential.from_value(SESSION_TOKEN),
+        action_credential=SessionCredential.from_value(ACTION_TOKEN),
+        permission_policy_path=tmp_path / "permissions.json",
+    )
+    app = create_app(settings, ToolProvider(target), platform)
+
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        with client.websocket_connect(
+            "/ws", headers={"host": "127.0.0.1"}, subprotocols=PROTOCOLS
+        ) as socket:
+            socket.send_text(json.dumps(hello()))
+            assert socket.receive_json()["type"] == "system.health"
+            assert socket.receive_json()["type"] == "assistant.state.changed"
+            assert socket.receive_json()["type"] == "model.status.changed"
+            assert (
+                client.post(
+                    "/chat",
+                    headers=SESSION_AUTH,
+                    json={"protocol_version": PROTOCOL_VERSION, "text": "Usuń dokument"},
+                ).status_code
+                == 200
+            )
+            while socket.receive_json()["type"] != "tool.confirmation.requested":
+                pass
+
+        deadline = time.monotonic() + 1
+        while app.state.tool_engine.confirmations.pending() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert app.state.tool_engine.confirmations.pending() == ()
+        assert platform.deleted == []

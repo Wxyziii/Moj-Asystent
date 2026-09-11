@@ -170,14 +170,23 @@ fn post_confirmation_decision(
         .take(8192)
         .read_to_string(&mut response)
         .map_err(|_| "Nie udało się odczytać odpowiedzi rdzenia".to_string())?;
-    let status = response.lines().next().unwrap_or_default();
-    if status.contains(" 200 ") {
-        Ok(())
-    } else if status.contains(" 409 ") {
-        Err("Ta prośba o zgodę wygasła albo została już rozpatrzona".to_string())
-    } else {
-        Err("Rdzeń odrzucił decyzję o zgodzie".to_string())
+    match parse_http_status(response.lines().next().unwrap_or_default()) {
+        Some(200) => Ok(()),
+        Some(409) => Err("Ta prośba o zgodę wygasła albo została już rozpatrzona".to_string()),
+        _ => Err("Rdzeń odrzucił decyzję o zgodzie".to_string()),
     }
+}
+
+fn parse_http_status(line: &str) -> Option<u16> {
+    let mut fields = line.trim_end_matches('\r').splitn(3, ' ');
+    if !matches!(fields.next(), Some("HTTP/1.0" | "HTTP/1.1")) {
+        return None;
+    }
+    let code = fields.next()?;
+    if code.len() != 3 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    code.parse().ok()
 }
 
 #[tauri::command]
@@ -352,7 +361,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_core_credential, validate_confirmation_decision, ConfirmationDecisionInput,
+        generate_core_credential, parse_http_status, validate_confirmation_decision,
+        ConfirmationDecisionInput,
     };
     use uuid::Uuid;
 
@@ -379,5 +389,13 @@ mod tests {
 
         decision.tool_name = "file_delete\r\nHost: attacker".to_string();
         assert!(validate_confirmation_decision(&decision).is_err());
+    }
+
+    #[test]
+    fn confirmation_http_parser_accepts_only_a_real_http_status_line() {
+        assert_eq!(parse_http_status("HTTP/1.1 200 OK\r"), Some(200));
+        assert_eq!(parse_http_status("HTTP/1.0 409 Conflict"), Some(409));
+        assert_eq!(parse_http_status("attacker 200 OK"), None);
+        assert_eq!(parse_http_status("HTTP/1.1 2000 Invalid"), None);
     }
 }

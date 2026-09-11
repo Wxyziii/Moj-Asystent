@@ -108,7 +108,7 @@ export function connectToCore(
       let previousState: AssistantState | undefined;
       const seen = new Set<string>();
       const responseSequences = new Map<string, number>();
-      const activeToolCalls = new Set<string>();
+      const activeToolCalls = new Map<string, string>();
       let activeOperation: string | undefined;
       connection.addEventListener("open", () => {
         if (active()) connection.send(JSON.stringify(hello));
@@ -206,8 +206,14 @@ export function connectToCore(
                   fail();
                   return;
                 }
-                activeToolCalls.add(event.payload.call_id);
-              } else if (!activeToolCalls.has(event.payload.call_id)) {
+                activeToolCalls.set(
+                  event.payload.call_id,
+                  event.payload.tool_name,
+                );
+              } else if (
+                activeToolCalls.get(event.payload.call_id) !==
+                event.payload.tool_name
+              ) {
                 fail();
                 return;
               }
@@ -219,7 +225,8 @@ export function connectToCore(
             ) {
               if (
                 event.payload.operation_id !== activeOperation ||
-                !activeToolCalls.has(event.payload.call_id)
+                activeToolCalls.get(event.payload.call_id) !==
+                  event.payload.tool_name
               ) {
                 fail();
                 return;

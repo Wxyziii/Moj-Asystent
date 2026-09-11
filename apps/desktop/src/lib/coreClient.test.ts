@@ -396,6 +396,49 @@ it("rejects a stale tool result from a completed operation", async () => {
   expect(status).toHaveBeenLastCalledWith("disconnected");
 });
 
+it("rejects a tool event that substitutes the tool name for an active call", async () => {
+  const status = vi.fn();
+  stop = connectToCore(status, vi.fn(), TOKEN);
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = FakeSocket.instances[0];
+  synchronize(socket);
+  const operation = crypto.randomUUID();
+  const call = crypto.randomUUID();
+  socket.frame(
+    wire(
+      "assistant.response.started",
+      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.execution.status",
+      {
+        operation_id: operation,
+        call_id: call,
+        tool_name: "read_file",
+        status: "requested",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.result",
+      {
+        operation_id: operation,
+        call_id: call,
+        tool_name: "delete_file",
+        status: "success",
+        message: "podmieniony wynik",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  expect(status).toHaveBeenLastCalledWith("disconnected");
+});
+
 it("rejects an out-of-order model stream and reconnects", async () => {
   const status = vi.fn();
   stop = connectToCore(status, vi.fn(), TOKEN);

@@ -75,6 +75,10 @@ class CoreRuntime:
         self._assert_owner()
         self._subscriptions.pop(queue, None)
 
+    def can_request_confirmation(self) -> bool:
+        self._assert_owner()
+        return not self.stopping and bool(self._subscriptions)
+
     def transition(
         self, target: AssistantState, *, expected_state: AssistantState | None = None
     ) -> AssistantStateChanged:

@@ -142,8 +142,11 @@ class ConfirmationManager:
             if item.request.expires_at > now and not item.future.done()
         )
 
-    def shutdown(self) -> None:
+    def cancel_all(self) -> None:
         for pending in self._pending.values():
             if not pending.future.done():
                 pending.future.cancel()
         self._pending.clear()
+
+    def shutdown(self) -> None:
+        self.cancel_all()

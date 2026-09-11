@@ -4,7 +4,7 @@
 
 The initial chat path uses `qwen3.5:4b` through Ollama at the loopback-only
 origin `http://127.0.0.1:11434`. The core validates provider responses and
-streams display text through Protocol 1.2; the desktop never talks to Ollama
+streams display text through the current exact Protocol 1.3; the desktop never talks to Ollama
 directly. `MOJ_ASYSTENT_OLLAMA_URL` and `MOJ_ASYSTENT_LLM_MODEL` may select a
 different loopback Ollama origin or compatible local model without changing
 conversation orchestration.

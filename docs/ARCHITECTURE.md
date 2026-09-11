@@ -181,11 +181,7 @@ async def set_application_volume(application: str, volume: int) -> ToolResult:
 
 Do not make `run_any_shell_command` a normal tool.
 
-The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation and call IDs under Protocol `1.3`.
-
-`read_ui_tree` and `inspect_screen` currently expose typed provider seams but return an honest unavailable result. Their Windows context implementations remain Milestone 7.
-
-The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation and call IDs under Protocol `1.3`.
+The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation, call and tool identity under Protocol `1.3`.
 
 `read_ui_tree` and `inspect_screen` currently expose typed provider seams but report unavailable. Their Windows context implementations remain Milestone 7.
 
@@ -201,9 +197,7 @@ Permission classes:
 
 Policy can include per-tool, per-app, per-path and one-time approvals.
 
-The initial persisted policy is deliberately smaller: validated per-tool preferences for `write.safe`, stored under the current user's local application-data directory. Corrupt policy fails closed. Sensitive tools ignore stored allow preferences and require an expiring, single-use ticket bound to the exact normalized request. A separate action credential retained in Tauri authorizes only confirmation resolution; the webview retains the ordinary session credential but cannot directly authorize actions.
-
-The initial persisted policy is deliberately smaller: validated per-tool preferences for `write.safe`, stored under the current user's local application-data directory. Corrupt policy fails closed. Sensitive tools ignore stored allow preferences and require an expiring, single-use ticket bound to the exact normalized request. A separate action credential retained in Tauri authorizes only confirmation resolution; the webview retains the ordinary session credential but cannot directly authorize actions.
+The initial persisted policy is deliberately smaller: validated per-tool preferences for `write.safe`, stored under the current user's local application-data directory. Corrupt or unwritable policy fails closed. Sensitive tools ignore stored allow preferences and require an expiring, single-use ticket bound to the exact normalized request. The last authenticated UI disconnect invalidates outstanding tickets. A separate action credential retained in Tauri authorizes only confirmation resolution; the webview retains the ordinary session credential but cannot directly authorize actions.
 
 ### 9. Watcher engine
 
@@ -273,10 +267,11 @@ Use a shared schema package for messages such as:
 - `model.status.changed`
 - `system.health`
 
-This is the implemented Protocol `1.2` set. Response streams carry one
+This is the implemented Protocol `1.3` set. Response streams carry one
 operation ID and strictly increasing sequence numbers; reconnecting clients
-cannot accept events correlated to an older WebSocket hello. The other planned event families
-are added only with their owning milestones.
+cannot accept events correlated to an older WebSocket hello. Tool events also
+bind a call ID to one tool name for its entire lifecycle. The other planned
+event families are added only with their owning milestones.
 
 Messages should include IDs so long-running actions can be correlated.
 

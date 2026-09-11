@@ -36,6 +36,9 @@ All notable project changes are tracked here.
 
 ### Fixed
 
+- Post-Milestone-6 security review now bounds directory enumeration and file reads at the I/O boundary, prevents move collision races from overwriting a newly created destination, and canonicalizes destructive paths before confirmation.
+- Tool-launched processes no longer inherit desktop/core credentials, fixed application aliases use absolute Windows system paths, approved restarts pin the verified executable, and failed persistent-policy writes remain denied in memory and execution.
+- Pending confirmations are invalidated when the last authenticated UI disconnects and cannot be created without a receiving UI; desktop tool-event correlation rejects tool-name substitution, and the Rust confirmation bridge strictly parses HTTP status lines.
 - Windows process listing now skips non-actionable PID 0 and normalizes empty optional executable metadata instead of failing the entire typed result.
 
 - Wake-name samples no longer fail the silence check solely because the fixed-duration recorder leaves padding after a short spoken name.

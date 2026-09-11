@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
+from moj_asystent_core.runtime import CoreRuntime
 from moj_asystent_core.tools.confirmations import (
     ConfirmationManager,
     ConfirmationRejected,
@@ -47,6 +48,10 @@ class Events:
         self.confirmations = []
         self.resolutions: list[str] = []
         self.results: list[ToolExecutionResult] = []
+
+    @staticmethod
+    def can_request_confirmation() -> bool:
+        return True
 
     def publish_tool_status(
         self, operation_id: UUID, call_id: UUID, tool_name: str, status: str
@@ -129,6 +134,55 @@ async def test_registry_rejects_unknown_tool_and_strict_arguments(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_invalid_non_ascii_tool_name_fails_before_event_publication(tmp_path: Path) -> None:
+    engine = ToolEngine(
+        ToolRegistry((definition(PermissionLevel.READ),)),
+        PermissionPolicyStore(tmp_path / "policy.json"),
+        ConfirmationManager(),
+        CoreRuntime(),
+    )
+
+    result = await engine.execute(
+        operation_id=uuid4(), call_id=uuid4(), tool_name="éé", arguments={}
+    )
+
+    assert result.tool_name == "invalid_tool"
+    assert result.status is ToolStatus.FAILURE
+
+
+@pytest.mark.asyncio
+async def test_confirmation_required_tool_fails_closed_without_a_ui_subscriber(
+    tmp_path: Path,
+) -> None:
+    executed = False
+
+    def implementation(value: BaseModel) -> Output:
+        nonlocal executed
+        executed = True
+        return Output(doubled=cast(Arguments, value).value * 2)
+
+    engine = ToolEngine(
+        ToolRegistry((definition(PermissionLevel.SENSITIVE, implementation),)),
+        PermissionPolicyStore(tmp_path / "policy.json"),
+        ConfirmationManager(),
+        CoreRuntime(),
+    )
+
+    result = await asyncio.wait_for(
+        engine.execute(
+            operation_id=uuid4(),
+            call_id=uuid4(),
+            tool_name="test_tool",
+            arguments={"value": 1},
+        ),
+        0.05,
+    )
+
+    assert result.status is ToolStatus.CANCELLED
+    assert executed is False
+
+
+@pytest.mark.asyncio
 async def test_read_tool_auto_allows_and_returns_validated_output(tmp_path: Path) -> None:
     engine, events = engine_for(tmp_path, PermissionLevel.READ)
     result = await engine.execute(
@@ -180,6 +234,54 @@ async def test_write_safe_follows_policy_and_can_persist_allow(tmp_path: Path) -
     )
     assert second.status is ToolStatus.SUCCESS
     assert len(events.confirmations) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_persistent_policy_write_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executed = False
+
+    def implementation(value: BaseModel) -> Output:
+        nonlocal executed
+        executed = True
+        return Output(doubled=cast(Arguments, value).value * 2)
+
+    engine, events = engine_for(
+        tmp_path, PermissionLevel.WRITE_SAFE, implementation, persistent=True
+    )
+    operation = uuid4()
+    task = asyncio.create_task(
+        engine.execute(
+            operation_id=operation,
+            call_id=uuid4(),
+            tool_name="test_tool",
+            arguments={"value": 4},
+        )
+    )
+    await asyncio.sleep(0)
+    request = events.confirmations[0]
+    monkeypatch.setattr(
+        Path,
+        "write_text",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    engine.resolve_confirmation(
+        ConfirmationDecision(
+            confirmation_id=request.confirmation_id,
+            operation_id=str(operation),
+            call_id=str(request.call_id),
+            tool_name="test_tool",
+            arguments_digest=request.arguments_digest,
+            decision="always_allow",
+        )
+    )
+
+    result = await task
+
+    assert result.status is ToolStatus.FAILURE
+    assert engine.policy.preference("test_tool") is ToolPreference.ASK
+    assert executed is False
 
 
 @pytest.mark.asyncio
@@ -242,7 +344,23 @@ async def test_confirmation_rejects_expiry_modified_arguments_and_stale_operatio
                 decision="allow",
             )
         )
-    now[0] += timedelta(seconds=6)
+    for changed in (
+        {"operation_id": str(uuid4())},
+        {"call_id": str(uuid4())},
+        {"tool_name": "move_file"},
+    ):
+        values = {
+            "confirmation_id": request.confirmation_id,
+            "operation_id": str(operation),
+            "call_id": str(request.call_id),
+            "tool_name": "delete_file",
+            "arguments_digest": request.arguments_digest,
+            "decision": "allow",
+            **changed,
+        }
+        with pytest.raises(ConfirmationRejected):
+            manager.resolve(ConfirmationDecision.model_validate(values))
+    now[0] += timedelta(seconds=5)
     with pytest.raises(ConfirmationRejected):
         manager.resolve(
             ConfirmationDecision(
@@ -256,6 +374,41 @@ async def test_confirmation_rejects_expiry_modified_arguments_and_stale_operatio
         )
     manager.cancel_operation(operation)
     assert manager.pending() == ()
+
+
+@pytest.mark.asyncio
+async def test_only_one_of_two_concurrent_confirmation_resolutions_succeeds() -> None:
+    manager = ConfirmationManager()
+    operation = uuid4()
+    request = manager.create(
+        operation_id=operation,
+        call_id=uuid4(),
+        tool_name="delete_file",
+        arguments={"path": "C:/safe/a.txt"},
+        action="Usunąć?",
+        target="a.txt",
+        details=(),
+        risk="Usunięcie",
+        persistent_allowed=False,
+    )
+    decision = ConfirmationDecision(
+        confirmation_id=request.confirmation_id,
+        operation_id=str(operation),
+        call_id=str(request.call_id),
+        tool_name=request.tool_name,
+        arguments_digest=request.arguments_digest,
+        decision="allow",
+    )
+
+    async def resolve() -> bool:
+        await asyncio.sleep(0)
+        try:
+            manager.resolve(decision)
+        except ConfirmationRejected:
+            return False
+        return True
+
+    assert sorted(await asyncio.gather(resolve(), resolve())) == [False, True]
 
 
 @pytest.mark.asyncio
@@ -374,5 +527,34 @@ async def test_power_actions_always_stop_for_confirmation(tmp_path: Path, tool_n
     await asyncio.sleep(0)
     request = events.confirmations[0]
     assert request.persistent_allowed is False
+    engine.cancel_operation(operation)
+    assert (await task).status is ToolStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_destructive_file_confirmation_binds_the_canonical_target(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.txt"
+    target.write_text("test", encoding="utf-8")
+    spelled = str(target).replace("\\", "/")
+    events = Events()
+    engine = build_tool_engine(events, policy_path=tmp_path / "policy.json", path_roots=(tmp_path,))
+    operation = uuid4()
+    task = asyncio.create_task(
+        engine.execute(
+            operation_id=operation,
+            call_id=uuid4(),
+            tool_name="delete_file",
+            arguments={"path": spelled},
+        )
+    )
+    await asyncio.sleep(0)
+
+    request = events.confirmations[0]
+    canonical = str(target.resolve())
+    assert request.target == canonical
+    assert request.arguments_digest == arguments_digest({"path": canonical})
+
     engine.cancel_operation(operation)
     assert (await task).status is ToolStatus.CANCELLED

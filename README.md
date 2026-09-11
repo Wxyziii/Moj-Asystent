@@ -2,7 +2,7 @@
 
 A local-first, Polish-only desktop AI assistant for Windows with voice activation, an overlay chat interface, screen awareness, system telemetry, memory, and controlled tool execution.
 
-> Project status: **Milestone 5 complete — local Polish AI conversation**
+> Project status: **Milestone 6 complete — typed tools and explicit permissions**
 
 ## Product goal
 
@@ -72,7 +72,8 @@ The deployment workflow is in `.github/workflows/pages.yml`.
 
 ## Status
 
-Milestones 1–5 are implemented: the Windows overlay, authenticated local core,
-Polish audio pipeline, trained custom wake name and local streamed Qwen chat.
-Tool execution, Windows context, telemetry, persistent memory and proactive
-watchers remain later milestones. See `docs/ROADMAP.md` for the exact scope.
+Milestones 1–6 are implemented: the Windows overlay, authenticated local core,
+Polish audio pipeline, trained custom wake name, local streamed Qwen chat and
+the typed tool/permission boundary. Windows context, telemetry, persistent
+memory and proactive watchers remain later milestones. See `docs/ROADMAP.md`
+for the exact scope.

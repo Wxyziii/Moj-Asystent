@@ -553,6 +553,10 @@ def create_app(
             if queue is not None:
                 runtime.unsubscribe(queue)
             runtime.sessions.discard(task)
+            if not runtime.sessions:
+                # A confirmation must never remain actionable when no trusted UI
+                # session can still display its exact target and consequences.
+                app.state.tool_engine.cancel_all_confirmations()
             with suppress(WebSocketDisconnect, RuntimeError, OSError, TimeoutError):
                 await asyncio.wait_for(websocket.close(code=close_code), 2.0)
 

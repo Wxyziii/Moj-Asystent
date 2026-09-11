@@ -102,6 +102,16 @@
   "changelog": [
     {
       "date": "2026-09-11",
+      "title": "Post-Milestone-6 security review",
+      "items": [
+        "Bounded filesystem reads and listings at the I/O boundary and made file moves atomically refuse late destination collisions.",
+        "Canonicalized destructive targets before confirmation and bound approval availability to authenticated UI subscribers.",
+        "Prevented tool-launched processes from inheriting core credentials, resolved fixed apps through absolute Windows system paths, and pinned approved restart executables.",
+        "Made policy-write failures fail closed and tightened desktop/Rust correlation and response parsing."
+      ]
+    },
+    {
+      "date": "2026-09-11",
       "title": "Milestone 6: typed tools and permissions",
       "items": [
         "Added the exact 18 planned typed tools with strict inputs, outputs, permission metadata, timeouts and deterministic implementations.",

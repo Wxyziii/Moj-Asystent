@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from io import BytesIO
 from pathlib import Path
 
 import psutil
@@ -11,7 +12,9 @@ from pydantic import ValidationError
 
 from moj_asystent_core.tools.models import (
     DeleteFileArguments,
+    ListDirectoryArguments,
     MoveFileArguments,
+    OpenApplicationArguments,
     PermissionLevel,
     ReadFileArguments,
     RestartProcessArguments,
@@ -94,6 +97,62 @@ def test_restart_refuses_protected_process_before_any_effect(
         )
 
 
+def test_restart_launches_only_the_verified_approved_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "approved.exe"
+    executable.write_bytes(b"test")
+    launched: list[tuple[list[str], dict[str, object]]] = []
+
+    class ApprovedProcess:
+        pid = 321
+
+        @staticmethod
+        def name() -> str:
+            return "approved.exe"
+
+        @staticmethod
+        def exe() -> str:
+            return str(executable)
+
+        @staticmethod
+        def cmdline() -> list[str]:
+            return ["relative-unapproved.exe", "--safe-argument"]
+
+        @staticmethod
+        def cwd() -> str:
+            return str(tmp_path)
+
+        @staticmethod
+        def terminate() -> None:
+            pass
+
+        @staticmethod
+        def wait(timeout: int) -> None:
+            assert timeout == 5
+
+    monkeypatch.setattr(
+        "moj_asystent_core.tools.platform._verified_process",
+        lambda _pid, _created: ApprovedProcess(),
+    )
+    monkeypatch.setattr(
+        "moj_asystent_core.tools.platform.subprocess.Popen",
+        lambda command, **options: launched.append((list(command), options)),
+    )
+    platform = WindowsToolPlatform(
+        path_policy=PathPolicy((tmp_path,)),
+        approved_restart_paths=frozenset({executable}),
+    )
+
+    platform.restart_approved_process(
+        RestartProcessArguments(pid=321, expected_create_time=1.0, executable_name="approved.exe")
+    )
+
+    command, options = launched[0]
+    assert command == ["relative-unapproved.exe", "--safe-argument"]
+    assert options["executable"] == str(executable.resolve())
+
+
 def test_process_listing_normalizes_non_actionable_windows_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -126,6 +185,30 @@ def test_process_listing_normalizes_non_actionable_windows_records(
     assert len(result.processes) == 1
     assert result.processes[0].pid == 42
     assert result.processes[0].executable is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows application registry")
+def test_application_registry_uses_absolute_system_executables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launched: list[tuple[tuple[str, ...], dict[str, object]]] = []
+
+    def record_launch(command, **kwargs) -> None:
+        launched.append((tuple(command), kwargs))
+
+    monkeypatch.setenv("MOJ_ASYSTENT_SESSION_CREDENTIAL", "session-secret")
+    monkeypatch.setenv("MOJ_ASYSTENT_ACTION_CREDENTIAL", "action-secret")
+    monkeypatch.setattr("moj_asystent_core.tools.platform.subprocess.Popen", record_launch)
+    platform = WindowsToolPlatform(path_policy=PathPolicy((tmp_path,)))
+
+    platform.open_application(OpenApplicationArguments(application_id="notepad"))
+
+    command, options = launched[0]
+    assert Path(command[0]).is_absolute()
+    child_environment = options["env"]
+    assert isinstance(child_environment, dict)
+    assert "MOJ_ASYSTENT_SESSION_CREDENTIAL" not in child_environment
+    assert "MOJ_ASYSTENT_ACTION_CREDENTIAL" not in child_environment
 
 
 @given(st.lists(st.sampled_from(["..", ".", "folder"]), min_size=1, max_size=8))
@@ -168,6 +251,63 @@ def test_read_file_limits_size_and_rejects_binary(tmp_path: Path) -> None:
         platform.read_file(ReadFileArguments(path=str(binary)))
 
 
+def test_read_file_rechecks_the_bytes_read_after_a_size_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform = WindowsToolPlatform(path_policy=PathPolicy((tmp_path,)))
+    target = tmp_path / "changing.txt"
+    target.write_bytes(b"small")
+    original_open = Path.open
+
+    class GrowingFile(BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            assert size == MAX_FILE_BYTES + 1
+            return super().read(size)
+
+    def changed_open(path: Path, mode: str = "r", *args, **kwargs):
+        if path == target and mode == "rb":
+            return GrowingFile(b"x" * (MAX_FILE_BYTES + 1))
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", changed_open)
+
+    with pytest.raises(ToolPlatformError, match="256"):
+        platform.read_file(ReadFileArguments(path=str(target)))
+
+
+def test_directory_listing_consumes_only_limit_plus_one_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform = WindowsToolPlatform(path_policy=PathPolicy((tmp_path,)))
+    items = tuple(tmp_path / f"item-{index}.txt" for index in range(6))
+    for item in items:
+        item.write_text("x", encoding="utf-8")
+    original_iterdir = Path.iterdir
+    consumed = 0
+
+    def bounded_iterdir(path: Path):
+        if path != tmp_path:
+            return original_iterdir(path)
+
+        def entries():
+            nonlocal consumed
+            for item in items:
+                consumed += 1
+                if consumed > 3:
+                    raise AssertionError("directory listing consumed beyond limit + 1")
+                yield item
+
+        return entries()
+
+    monkeypatch.setattr(Path, "iterdir", bounded_iterdir)
+
+    result = platform.list_directory(ListDirectoryArguments(path=str(tmp_path), limit=2))
+
+    assert consumed == 3
+    assert len(result.entries) == 2
+    assert result.truncated is True
+
+
 def test_move_collision_and_directory_delete_are_rejected(tmp_path: Path) -> None:
     platform = WindowsToolPlatform(path_policy=PathPolicy((tmp_path,)))
     source = tmp_path / "source.txt"
@@ -178,6 +318,29 @@ def test_move_collision_and_directory_delete_are_rejected(tmp_path: Path) -> Non
         platform.move_file(MoveFileArguments(source=str(source), destination=str(target)))
     with pytest.raises(ToolPlatformError, match="plikiem"):
         platform.delete_file(DeleteFileArguments(path=str(tmp_path)))
+
+
+def test_move_fails_closed_if_destination_appears_after_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform = WindowsToolPlatform(path_policy=PathPolicy((tmp_path,)))
+    source = tmp_path / "source.txt"
+    destination = tmp_path / "destination.txt"
+    source.write_text("source", encoding="utf-8")
+    original_destination_file = platform.paths.destination_file
+
+    def raced_destination(value: str) -> Path:
+        checked = original_destination_file(value)
+        checked.write_text("raced", encoding="utf-8")
+        return checked
+
+    monkeypatch.setattr(platform.paths, "destination_file", raced_destination)
+
+    with pytest.raises(ToolPlatformError, match="przenieść"):
+        platform.move_file(MoveFileArguments(source=str(source), destination=str(destination)))
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "raced"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows path syntax")

@@ -129,7 +129,7 @@ Completed scope:
 
 - replaceable loopback-only Ollama provider with `qwen3.5:4b` as the default;
 - Polish-only system prompt with an explicit no-system-actions boundary;
-- validated, cancellable response streaming through exact Protocol 1.2 events;
+- validated, cancellable response streaming through the current exact Protocol 1.3 events;
 - bounded process-local conversation context containing completed turns only;
 - authenticated typed-chat endpoint and enabled desktop composer;
 - visible unavailable, missing, loading, ready and error model states;
@@ -155,7 +155,8 @@ Completed scope:
 - local `read` / `write.safe` / `sensitive` policy with fail-closed storage and confirmation required every time for destructive tools;
 - single-use, short-lived confirmations bound to the operation, call, tool and canonical argument digest;
 - separate Tauri-held action credential and a narrow Rust confirmation command, so React never receives privileged action authorization;
-- canonical user-root file controls, bounded UTF-8 reads, no recursive deletion/overwrite, allowlisted application launch and PID/create-time process identity checks;
+- canonical user-root file controls, bounded reads/listings, atomic no-replace moves, no recursive deletion, absolute allowlisted application launch and PID/create-time process identity checks;
+- fail-closed persistent-policy writes, child-process credential scrubbing and confirmation availability bound to authenticated UI subscribers;
 - synchronized Protocol `1.3` tool lifecycle events and a Polish grayscale confirmation card;
 - typed Milestone 7 seams for UI-tree/screen inspection that report unavailable rather than fabricating context.
 

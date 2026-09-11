@@ -99,7 +99,7 @@ If developer mode later introduces shell execution:
 - destructive operations display exact target(s);
 - avoid recursive delete in early versions.
 
-Milestone 6 limits filesystem tools to canonical paths under configured user roots, rejects symlinks/reparse points, reads at most 256 KiB of UTF-8 non-binary content, refuses overwrite collisions and never recursively deletes directories. These controls reduce traversal risk but do not provide a kernel-level handle-based defense against every same-user TOCTOU race.
+Milestone 6 limits filesystem tools to canonical paths under configured user roots, rejects symlinks/reparse points, reads at most 256 KiB of UTF-8 non-binary content through a bounded read, and inspects at most `limit + 1` directory entries. Destructive confirmations bind canonical preflighted paths, execution revalidates them, moves use an atomic no-replace operation, and deletion is never recursive. These controls reduce traversal risk but do not provide a kernel-level handle-based defense against every same-user TOCTOU race or same-path file replacement.
 
 The initial default root is the current user's home directory so the feature is usable before a path-selection settings flow exists. This remains broader than the intended mature allowlist and should be narrowed through explicit user-selected roots before adding external/cloud providers. Cancellation is guaranteed while waiting for approval and before dispatch; a blocking native call already past its point of effect may not be interruptible by Python's thread timeout.
 
@@ -110,6 +110,7 @@ The initial default root is the current user's home directory so the feature is 
 - confirmation IDs use cryptographic randomness, expire after 90 seconds and are single-use;
 - operation ID, call ID, tool name and canonical argument digest must all match;
 - cancellation/replacement invalidates pending confirmations;
+- losing the last authenticated WebSocket session invalidates pending confirmations, and no new ticket can be created without an authenticated event subscriber;
 - sensitive tools cannot be permanently approved by local policy.
 
 Loopback plus per-launch credentials protects against ordinary browser-origin requests, but does not claim isolation from malware running as the same Windows user.
@@ -153,11 +154,15 @@ V1 local-first.
 
 The desktop/core voice boundary additionally requires a per-launch random credential. Tauri passes it directly to the owned core process, and the core validates it before health responses, audio-control requests or WebSocket acceptance. Credentials are memory-only, omitted from logs and invalid after application restart. HTTP and WebSocket remain restricted to loopback hosts and known desktop origins, with strict payload-size and schema validation. This limits accidental cross-origin/local access; it does not defend against a malicious process with access to the same user's process memory.
 
-Wake-name onboarding uses the same boundary. Session, calibration, training, validation and activation endpoints require the credential and Protocol 1.2. Session IDs are UUIDs, request models reject unknown fields, base64 PCM is bounded before decoding, and model activation accepts only a validated ONNX file in the service-owned model directory. Status responses redact filesystem paths. Temporary recordings and partial models are cleaned up on cancellation, failure and shutdown; the active model is replaced only through an atomic file operation.
+The core removes both credentials from its process environment after startup and explicitly scrubs them from tool-launched child environments. Fixed application aliases resolve to absolute Windows system executables rather than relying on the working directory or `PATH`.
+
+Approved process restart binds PID, creation time, executable name and the resolved allowlisted image. Relaunch explicitly pins that verified executable even if the captured command line uses a different or relative first argument.
+
+Wake-name onboarding uses the same boundary. Session, calibration, training, validation and activation endpoints require the credential and current exact Protocol 1.3. Session IDs are UUIDs, request models reject unknown fields, base64 PCM is bounded before decoding, and model activation accepts only a validated ONNX file in the service-owned model directory. Status responses redact filesystem paths. Temporary recordings and partial models are cleaned up on cancellation, failure and shutdown; the active model is replaced only through an atomic file operation.
 
 Local chat requests use the authenticated core API. The core alone contacts
 Ollama, accepts only an HTTP loopback origin, disables environment proxy use,
-validates bounded provider frames and publishes only typed Protocol 1.2 events.
+validates bounded provider frames and publishes only typed Protocol 1.3 events.
 Prompts and response text are held in bounded process memory and are not logged
 or persisted by Milestone 5.
 

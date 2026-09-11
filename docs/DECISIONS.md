@@ -36,7 +36,7 @@ Reason: loopback binding prevents remote access but does not by itself distingui
 
 Decision: model tool calls are untrusted proposals. Only names registered in the central tool registry can reach deterministic implementations, and only after strict argument validation and permission evaluation. `read` tools run automatically, `write.safe` follows a validated user-local policy that defaults to asking, and `sensitive` always requires a fresh confirmation. Persistent approval is never available to sensitive tools.
 
-Confirmation tickets are unpredictable, expire after 90 seconds, are single-use and bind the operation ID, call ID, tool name and canonical argument digest. Replacing or cancelling an operation invalidates its pending tickets. Tool results—not model text—are the sole authoritative record of execution success.
+Confirmation tickets are unpredictable, expire after 90 seconds, are single-use and bind the operation ID, call ID, tool name and canonical argument digest. Replacing or cancelling an operation, core restart, or loss of the last authenticated UI event stream invalidates its pending tickets; no confirmation-requiring action may create a new ticket without an authenticated event subscriber. Destructive filesystem paths are canonicalized and policy-checked before the ticket is shown, then revalidated immediately before execution. Tool results—not model text—are the sole authoritative record of execution success.
 
 Reason: this preserves the rule that AI chooses what to propose, deterministic code controls how it is performed, and policy/user confirmation decides whether it may execute. It also prevents a compromised or malformed model response from manufacturing authorization or success.
 

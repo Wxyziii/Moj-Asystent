@@ -28,8 +28,8 @@ def create_server(settings: CoreSettings) -> uvicorn.Server:
 
 
 def main() -> None:
-    raw_credential = os.environ.get("MOJ_ASYSTENT_SESSION_CREDENTIAL")
-    raw_action_credential = os.environ.get("MOJ_ASYSTENT_ACTION_CREDENTIAL")
+    raw_credential = os.environ.pop("MOJ_ASYSTENT_SESSION_CREDENTIAL", None)
+    raw_action_credential = os.environ.pop("MOJ_ASYSTENT_ACTION_CREDENTIAL", None)
     if raw_credential is None:
         raise RuntimeError("Core requires a per-launch session credential")
     if raw_action_credential is None:

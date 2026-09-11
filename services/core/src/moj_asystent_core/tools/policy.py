@@ -54,12 +54,13 @@ class PermissionPolicyStore:
         }[preference]
 
     def set_preference(self, tool_name: str, value: ToolPreference) -> None:
-        self._preferences[tool_name] = value
-        document = _PolicyDocument(tools=self._preferences)
+        updated = {**self._preferences, tool_name: value}
+        document = _PolicyDocument(tools=updated)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
         temporary.write_text(document.model_dump_json(indent=2), encoding="utf-8")
         temporary.replace(self.path)
+        self._preferences = updated
 
     def preference(self, tool_name: str) -> ToolPreference:
         return self._preferences.get(tool_name, ToolPreference.ASK)

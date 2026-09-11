@@ -52,6 +52,8 @@ OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
 
 class ToolEventSink(Protocol):
+    def can_request_confirmation(self) -> bool: ...
+
     def publish_tool_status(
         self, operation_id: UUID, call_id: UUID, tool_name: str, status: str
     ) -> None: ...
@@ -88,6 +90,7 @@ class ToolDefinition:
     persistent_approval: bool
     audit_category: str
     confirmation: Callable[[BaseModel], ConfirmationPresentation]
+    prepare: Callable[[BaseModel], BaseModel] = lambda value: value
 
     def model_definition(self) -> ModelToolDefinition:
         parameters = cast(dict[str, JsonValue], self.input_model.model_json_schema())
@@ -128,7 +131,8 @@ class ToolRegistry:
         definition = self.get(name)
         if definition is None:
             raise ValueError("Unknown tool")
-        return definition, definition.input_model.model_validate(arguments)
+        validated = definition.input_model.model_validate(arguments)
+        return definition, definition.prepare(validated)
 
 
 class ToolEngine:
@@ -156,6 +160,14 @@ class ToolEngine:
             self.events.publish_tool_status(operation_id, call_id, tool_name, "requested")
         try:
             definition, validated = self.registry.validate(tool_name, arguments)
+        except ToolPlatformError as error:
+            result = ToolExecutionResult(
+                tool_name=tool_name,
+                status=ToolStatus.FAILURE,
+                message=_safe_error_message(error),
+            )
+            self.events.publish_tool_result(operation_id, call_id, result)
+            return result
         except (ValueError, ValidationError):
             result = ToolExecutionResult(
                 tool_name=tool_name if _valid_tool_name(tool_name) else "invalid_tool",
@@ -178,6 +190,16 @@ class ToolEngine:
             )
 
         if permission is PermissionDecision.CONFIRM:
+            if not self.events.can_request_confirmation():
+                return self._publish_result(
+                    operation_id,
+                    call_id,
+                    ToolExecutionResult(
+                        tool_name=definition.name,
+                        status=ToolStatus.CANCELLED,
+                        message="Brak aktywnego interfejsu do potwierdzenia działania.",
+                    ),
+                )
             presentation = definition.confirmation(validated)
             normalized = cast(dict[str, JsonValue], validated.model_dump(mode="json"))
             request = self.confirmations.create(
@@ -219,7 +241,18 @@ class ToolEngine:
                     ),
                 )
             if decision == "always_allow":
-                self.policy.set_preference(definition.name, ToolPreference.ALLOW)
+                try:
+                    self.policy.set_preference(definition.name, ToolPreference.ALLOW)
+                except OSError:
+                    return self._publish_result(
+                        operation_id,
+                        call_id,
+                        ToolExecutionResult(
+                            tool_name=definition.name,
+                            status=ToolStatus.FAILURE,
+                            message="Nie udało się bezpiecznie zapisać zgody użytkownika.",
+                        ),
+                    )
 
         self.events.publish_tool_status(operation_id, call_id, definition.name, "executing")
         try:
@@ -276,6 +309,9 @@ class ToolEngine:
     def cancel_operation(self, operation_id: UUID) -> None:
         self.confirmations.cancel_operation(operation_id)
 
+    def cancel_all_confirmations(self) -> None:
+        self.confirmations.cancel_all()
+
     def shutdown(self) -> None:
         self.confirmations.shutdown()
 
@@ -319,6 +355,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
         target: Callable[[BaseModel], str] = lambda _: "system",
         details: Callable[[BaseModel], tuple[tuple[str, str], ...]] = lambda _: (),
         risk: str = "Działanie zmieni stan komputera.",
+        prepare: Callable[[BaseModel], BaseModel] = lambda value: value,
     ) -> ToolDefinition:
         return ToolDefinition(
             name=name,
@@ -337,6 +374,15 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
                 details=details(args),
                 risk=risk,
             ),
+            prepare=prepare,
+        )
+
+    def prepare_move(value: BaseModel) -> MoveFileArguments:
+        arguments = cast(MoveFileArguments, value)
+        return MoveFileArguments(
+            source=str(platform.paths.existing_file(arguments.source)),
+            destination=str(platform.paths.destination_file(arguments.destination)),
+            overwrite=False,
         )
 
     return (
@@ -458,6 +504,9 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             category="filesystem.open",
             action="Otworzyć folder?",
             target=lambda value: cast(PathArguments, value).path,
+            prepare=lambda value: PathArguments(
+                path=str(platform.paths.existing_directory(cast(PathArguments, value).path))
+            ),
         ),
         definition(
             "set_volume",
@@ -513,6 +562,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             target=lambda value: cast(MoveFileArguments, value).source,
             details=lambda value: (("Do", cast(MoveFileArguments, value).destination),),
             risk="Plik zmieni położenie. Istniejący cel nie zostanie nadpisany.",
+            prepare=prepare_move,
         ),
         definition(
             "delete_file",
@@ -525,6 +575,9 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             action="Usunąć plik?",
             target=lambda value: cast(DeleteFileArguments, value).path,
             risk="Plik zostanie trwale usunięty i może nie być możliwy do odzyskania.",
+            prepare=lambda value: DeleteFileArguments(
+                path=str(platform.paths.existing_file(cast(DeleteFileArguments, value).path))
+            ),
         ),
         definition(
             "restart_pc",
@@ -566,6 +619,7 @@ def _restart_process_target(value: BaseModel) -> str:
 def _valid_tool_name(value: str) -> bool:
     return (
         2 <= len(value) <= 64
+        and value.isascii()
         and value[0].isalpha()
         and all(
             character.islower() or character.isdigit() or character == "_" for character in value

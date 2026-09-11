@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import ctypes
 import os
-import shutil
 import subprocess
 import sys
+from itertools import islice
 from pathlib import Path
 from typing import Final
 
@@ -61,6 +61,10 @@ WINDOWS_RESERVED_NAMES: Final = frozenset(
     {"CON", "PRN", "AUX", "NUL", "CLOCK$"}
     | {f"COM{number}" for number in range(1, 10)}
     | {f"LPT{number}" for number in range(1, 10)}
+)
+CORE_CREDENTIAL_ENVIRONMENT_KEYS: Final = (
+    "MOJ_ASYSTENT_SESSION_CREDENTIAL",
+    "MOJ_ASYSTENT_ACTION_CREDENTIAL",
 )
 
 
@@ -251,8 +255,10 @@ class WindowsToolPlatform:
 
     def list_directory(self, args: ListDirectoryArguments) -> ListDirectoryOutput:
         directory = self.paths.existing_directory(args.path)
+        candidates = list(islice(directory.iterdir(), args.limit + 1))
+        truncated = len(candidates) > args.limit
         entries: list[DirectoryEntry] = []
-        for item in sorted(directory.iterdir(), key=lambda path: path.name.casefold()):
+        for item in sorted(candidates, key=lambda path: path.name.casefold()):
             if len(entries) >= args.limit:
                 break
             try:
@@ -274,10 +280,7 @@ class WindowsToolPlatform:
                 entries.append(DirectoryEntry(name=item.name, kind=kind, size_bytes=size))
             except OSError:
                 continue
-        total = sum(1 for _ in directory.iterdir())
-        return ListDirectoryOutput(
-            path=str(directory), entries=tuple(entries), truncated=total > len(entries)
-        )
+        return ListDirectoryOutput(path=str(directory), entries=tuple(entries), truncated=truncated)
 
     def read_file(self, args: ReadFileArguments) -> ReadFileOutput:
         path = self.paths.existing_file(args.path)
@@ -285,9 +288,12 @@ class WindowsToolPlatform:
         if size > MAX_FILE_BYTES:
             raise ToolPlatformError("Plik przekracza limit 256 KiB.")
         try:
-            raw = path.read_bytes()
+            with path.open("rb") as source:
+                raw = source.read(MAX_FILE_BYTES + 1)
         except OSError as error:
             raise ToolPlatformError("Nie można odczytać pliku.") from error
+        if len(raw) > MAX_FILE_BYTES:
+            raise ToolPlatformError("Plik przekracza limit 256 KiB.")
         if b"\x00" in raw:
             raise ToolPlatformError("Plik binarny nie może zostać przekazany do rozmowy.")
         try:
@@ -319,17 +325,26 @@ class WindowsToolPlatform:
         return FindProcessByPortOutput(found=False, port=args.port, protocol=args.protocol)
 
     def open_application(self, args: OpenApplicationArguments) -> ActionOutput:
-        commands = {
-            "notepad": ("notepad.exe",),
-            "calculator": ("calc.exe",),
-            "explorer": ("explorer.exe",),
-        }
+        if sys.platform != "win32":
+            raise ToolUnavailableError("Uruchamianie aplikacji jest dostępne tylko w Windows.")
         if args.application_id == "settings":
-            if sys.platform != "win32":
-                raise ToolUnavailableError("Ustawienia systemowe są dostępne tylko w Windows.")
             os.startfile("ms-settings:")  # type: ignore[attr-defined]
         else:
-            subprocess.Popen(commands[args.application_id], close_fds=True)
+            windows = _windows_directory()
+            commands = {
+                "notepad": windows / "System32" / "notepad.exe",
+                "calculator": windows / "System32" / "calc.exe",
+                "explorer": windows / "explorer.exe",
+            }
+            executable = commands[args.application_id]
+            if not executable.is_file():
+                raise ToolUnavailableError("Aplikacja systemowa nie jest dostępna.")
+            subprocess.Popen(
+                (str(executable),),
+                cwd=str(executable.parent),
+                close_fds=True,
+                env=_sanitized_child_environment(),
+            )
         return ActionOutput(changed=True, target=args.application_id, current_value="opened")
 
     def focus_window(self, args: FocusWindowArguments) -> ActionOutput:
@@ -420,7 +435,13 @@ class WindowsToolPlatform:
             process.wait(timeout=5)
         except psutil.TimeoutExpired as error:
             raise ToolPlatformError("Proces nie zakończył się w bezpiecznym czasie.") from error
-        subprocess.Popen(command or [str(executable)], cwd=working_directory, close_fds=True)
+        subprocess.Popen(
+            command or [str(executable)],
+            executable=str(executable),
+            cwd=working_directory,
+            close_fds=True,
+            env=_sanitized_child_environment(),
+        )
         return ActionOutput(
             changed=True, target=f"{name} (PID {args.pid})", current_value="restarted"
         )
@@ -429,7 +450,7 @@ class WindowsToolPlatform:
         source = self.paths.existing_file(args.source)
         destination = self.paths.destination_file(args.destination)
         try:
-            shutil.move(str(source), str(destination))
+            _move_file_no_replace(source, destination)
         except OSError as error:
             raise ToolPlatformError("Nie udało się przenieść pliku.") from error
         return ActionOutput(
@@ -473,6 +494,40 @@ def _verified_process(pid: int, expected_create_time: float) -> psutil.Process:
         raise ToolPlatformError("Proces już nie istnieje.") from error
     except psutil.AccessDenied as error:
         raise ToolPlatformError("Brak dostępu do procesu.") from error
+
+
+def _move_file_no_replace(source: Path, destination: Path) -> None:
+    """Move one file without any overwrite fallback."""
+    if sys.platform == "win32":
+        # Windows rename is atomic and rejects an existing destination. In
+        # particular, do not use shutil.move: its copy fallback may overwrite a
+        # destination that appears after policy validation.
+        os.rename(source, destination)
+        return
+    os.link(source, destination, follow_symlinks=False)
+    try:
+        source.unlink()
+    except OSError:
+        destination.unlink(missing_ok=True)
+        raise
+
+
+def _windows_directory() -> Path:
+    buffer = ctypes.create_unicode_buffer(32_768)
+    length = int(ctypes.windll.kernel32.GetWindowsDirectoryW(buffer, len(buffer)))
+    if length <= 0 or length >= len(buffer):
+        raise ToolUnavailableError("Nie można ustalić katalogu systemowego Windows.")
+    path = Path(buffer.value)
+    if not path.is_absolute() or not path.is_dir():
+        raise ToolUnavailableError("Katalog systemowy Windows jest niedostępny.")
+    return path
+
+
+def _sanitized_child_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    for key in CORE_CREDENTIAL_ENVIRONMENT_KEYS:
+        environment.pop(key, None)
+    return environment
 
 
 def _safe_process_value(function):
