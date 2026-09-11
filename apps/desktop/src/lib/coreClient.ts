@@ -8,6 +8,20 @@ import {
 } from "@moj-asystent/protocol";
 
 export type CoreConnectionStatus = "connecting" | "connected" | "disconnected";
+export interface RegionCapture {
+  captureId: string;
+  contextId: string;
+  previewDataUrl: string;
+  normalizedWidth: number;
+  normalizedHeight: number;
+}
+
+export interface PhysicalBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
 const defaultUrl = import.meta.env.VITE_CORE_URL ?? "http://127.0.0.1:8765";
 const HANDSHAKE_TIMEOUT = 5_000;
 const LIVENESS_TIMEOUT = 25_000;
@@ -294,6 +308,7 @@ export async function sendAudioCommand(
 export async function sendChatMessage(
   text: string,
   credential: string,
+  visualContextId?: string,
   baseUrl = defaultUrl,
 ): Promise<string> {
   const normalized = text.trim();
@@ -311,6 +326,7 @@ export async function sendChatMessage(
     body: JSON.stringify({
       protocol_version: PROTOCOL_VERSION,
       text: normalized,
+      ...(visualContextId ? { visual_context_id: visualContextId } : {}),
     }),
     redirect: "error",
   });
@@ -336,6 +352,84 @@ export async function sendChatMessage(
   )
     throw new Error("Core rejected chat message");
   return value.operation_id;
+}
+
+export async function captureScreenRegion(
+  region: PhysicalBounds,
+  monitorBounds: PhysicalBounds,
+  dpiScale: number,
+  credential: string,
+  baseUrl = defaultUrl,
+): Promise<RegionCapture> {
+  if (!credentialPattern.test(credential))
+    throw new Error("Invalid credential");
+  if (!Number.isFinite(dpiScale) || dpiScale < 0.5 || dpiScale > 4)
+    throw new Error("Invalid DPI scale");
+  const url = validateCoreUrl(baseUrl);
+  const response = await fetch(`${url.origin}/vision/regions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credential}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      protocol_version: PROTOCOL_VERSION,
+      reason: "Fragment wybrany przez użytkownika",
+      region,
+      monitor_bounds: monitorBounds,
+      dpi_scale: dpiScale,
+    }),
+    redirect: "error",
+  });
+  const responseBody = await response.text();
+  if (new TextEncoder().encode(responseBody).length > 150_000)
+    throw new Error("Odpowiedź obrazu jest zbyt duża");
+  let value: unknown;
+  try {
+    value = JSON.parse(responseBody);
+  } catch {
+    throw new Error("Rdzeń zwrócił nieprawidłową odpowiedź obrazu");
+  }
+  if (!response.ok || typeof value !== "object" || value === null)
+    throw new Error("Nie udało się przechwycić fragmentu");
+  const record = value as Record<string, unknown>;
+  const result = record.result as Record<string, unknown> | undefined;
+  if (
+    !result ||
+    result.available !== true ||
+    typeof result.capture_id !== "string" ||
+    !uuidPattern.test(result.capture_id) ||
+    typeof result.context_id !== "string" ||
+    !uuidPattern.test(result.context_id) ||
+    typeof result.normalized_width !== "number" ||
+    typeof result.normalized_height !== "number" ||
+    typeof record.preview_data_url !== "string" ||
+    !record.preview_data_url.startsWith("data:image/jpeg;base64,") ||
+    record.preview_data_url.length > 140_000
+  )
+    throw new Error("Rdzeń odrzucił lub zablokował przechwycenie");
+  return {
+    captureId: result.capture_id,
+    contextId: result.context_id,
+    previewDataUrl: record.preview_data_url,
+    normalizedWidth: result.normalized_width,
+    normalizedHeight: result.normalized_height,
+  };
+}
+
+export async function discardScreenCapture(
+  captureId: string,
+  credential: string,
+  baseUrl = defaultUrl,
+): Promise<void> {
+  if (!uuidPattern.test(captureId) || !credentialPattern.test(credential))
+    throw new Error("Invalid capture request");
+  const url = validateCoreUrl(baseUrl);
+  await fetch(`${url.origin}/vision/captures/${captureId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${credential}` },
+    redirect: "error",
+  });
 }
 
 function validateCoreUrl(baseUrl: string): URL {

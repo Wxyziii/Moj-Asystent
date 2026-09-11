@@ -4,16 +4,17 @@ import asyncio
 import ipaddress
 import json
 import logging
+from base64 import b64encode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import Base64Bytes, BaseModel, ConfigDict, Field, field_validator
+from pydantic import Base64Bytes, BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from .audio import AudioConfig, AudioPipeline, PcmFrame
 from .audio_providers import (
@@ -25,7 +26,7 @@ from .audio_providers import (
     list_input_devices,
 )
 from .auth import SessionCredential
-from .context import ContextSettings
+from .context import Bounds, ContextSettings
 from .conversation import LocalConversationService, TextChatController
 from .llm import (
     DEFAULT_MODEL,
@@ -47,9 +48,10 @@ from .protocol import (
 from .runtime import CoreRuntime
 from .tools import ToolEngine, build_tool_engine
 from .tools.confirmations import ConfirmationRejected
-from .tools.models import ConfirmationDecision
+from .tools.models import ConfirmationDecision, ContextProviderArguments
 from .tools.platform import WindowsToolPlatform
 from .tools.policy import default_policy_path
+from .vision import PendingVisionStore, VisionInspectionResult, VisionSettings
 from .wakeword import WakeModelMetadata, WakeModelStore, default_wake_root
 from .wakeword_training import OpenWakeWordOnnxTrainer, WakeOnboardingService
 
@@ -105,6 +107,7 @@ class SensitivityRequest(StrictRequest):
 
 class ChatRequest(StrictRequest):
     text: str = Field(min_length=1, max_length=8_192)
+    visual_context_id: UUID | None = None
 
     @field_validator("text")
     @classmethod
@@ -124,6 +127,27 @@ class ResolveConfirmationRequest(StrictRequest):
     decision: Literal["allow", "cancel", "always_allow"]
 
 
+class RegionBoundsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    left: StrictInt
+    top: StrictInt
+    right: StrictInt
+    bottom: StrictInt
+
+
+class CaptureRegionRequest(StrictRequest):
+    reason: str = Field(min_length=1, max_length=256)
+    region: RegionBoundsRequest
+    monitor_bounds: RegionBoundsRequest
+    dpi_scale: float = Field(ge=0.5, le=4.0)
+
+
+class RegionCaptureResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    result: VisionInspectionResult
+    preview_data_url: str | None = Field(default=None, max_length=140_000)
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     host: str = "127.0.0.1"
@@ -141,6 +165,7 @@ class CoreSettings:
     llm_model: str = DEFAULT_MODEL
     permission_policy_path: Path = field(default_factory=default_policy_path)
     context: ContextSettings = field(default_factory=ContextSettings)
+    vision: VisionSettings = field(default_factory=VisionSettings)
 
     def __post_init__(self) -> None:
         if not ipaddress.ip_address(self.host).is_loopback:
@@ -171,8 +196,10 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     wake_provider = OpenWakeWordProvider(config.wake_model_path, config.development_wake_model)
     provider: LanguageModelProvider = app.state.language_model_provider
     tool_platform = app.state.tool_platform or WindowsToolPlatform(
-        context_settings=app.state.settings.context
+        context_settings=app.state.settings.context,
+        vision_settings=app.state.settings.vision,
     )
+    app.state.tool_platform = tool_platform
     tool_engine: ToolEngine = build_tool_engine(
         runtime,
         policy_path=app.state.settings.permission_policy_path,
@@ -180,7 +207,9 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.tool_engine = tool_engine
     conversation = LocalConversationService(runtime, provider, tool_engine=tool_engine)
-    chat = TextChatController(runtime, conversation)
+    vision_store = PendingVisionStore()
+    chat = TextChatController(runtime, conversation, vision_store)
+    app.state.vision_store = vision_store
     app.state.conversation = conversation
     app.state.chat = chat
     audio = AudioPipeline(
@@ -215,6 +244,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         await onboarding.shutdown()
         await chat.shutdown()
         await audio.shutdown()
+        vision_store.close()
         tool_engine.shutdown()
         await conversation.close()
         await runtime.shutdown()
@@ -301,8 +331,49 @@ def create_app(
         _: Annotated[None, Depends(authorize)],
     ) -> dict[str, object]:
         await app.state.audio.cancel()
-        operation_id = await app.state.chat.start(request.text)
+        try:
+            operation_id = await app.state.chat.start(request.text, request.visual_context_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         return {"status": "accepted", "operation_id": operation_id}
+
+    @app.post("/vision/regions", response_model=RegionCaptureResponse)
+    async def capture_region(
+        request: CaptureRegionRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> RegionCaptureResponse:
+        operation_id = uuid4()
+        region = Bounds.model_validate(request.region.model_dump())
+        monitor = Bounds.model_validate(request.monitor_bounds.model_dump())
+        try:
+            outcome = await asyncio.to_thread(
+                app.state.tool_platform.capture_region,
+                ContextProviderArguments(reason=request.reason),
+                operation_id,
+                region=region,
+                monitor_bounds=monitor,
+                dpi_scale=request.dpi_scale,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        preview = None
+        if outcome.preview is not None:
+            preview = "data:image/jpeg;base64," + b64encode(outcome.preview).decode("ascii")
+            outcome.preview[:] = b"\0" * len(outcome.preview)
+            outcome.preview.clear()
+            outcome.preview = None
+        if outcome.result.available:
+            app.state.vision_store.put(outcome)
+        else:
+            outcome.clear()
+        return RegionCaptureResponse(result=outcome.result, preview_data_url=preview)
+
+    @app.delete("/vision/captures/{capture_id}")
+    async def discard_region(
+        capture_id: UUID,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, bool]:
+        return {"removed": app.state.vision_store.discard(capture_id)}
 
     @app.post("/chat/cancel")
     async def cancel_chat(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:

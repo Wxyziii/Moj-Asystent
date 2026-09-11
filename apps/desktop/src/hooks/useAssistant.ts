@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { type AssistantState, type OverlayMode } from "../domain/assistant";
 import {
   connectToCore,
   sendAudioCommand,
   sendChatMessage,
+  discardScreenCapture,
+  type RegionCapture,
   type CoreConnectionStatus,
   type CoreContentEvent,
 } from "../lib/coreClient";
@@ -41,6 +44,7 @@ export function useAssistantUi() {
   const [confirmationError, setConfirmationError] = useState<string>();
   const [toolActivity, setToolActivity] = useState<string>();
   const [contextChip, setContextChip] = useState<string>();
+  const [visualContext, setVisualContext] = useState<RegionCapture>();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
     const savedMode = window.localStorage.getItem("moj-asystent.overlay-mode");
     return savedMode === "expanded" || savedMode === "settings"
@@ -64,9 +68,11 @@ export function useAssistantUi() {
         const contextActivity =
           event.payload.tool_name === "read_ui_tree"
             ? "Odczytuję interfejs…"
-            : event.payload.tool_name === "get_active_window"
-              ? "Analizuję aktywne okno…"
-              : undefined;
+            : event.payload.tool_name === "inspect_screen"
+              ? "Analizuję obraz…"
+              : event.payload.tool_name === "get_active_window"
+                ? "Analizuję aktywne okno…"
+                : undefined;
         setToolActivity(
           contextActivity ??
             (event.payload.status === "executing"
@@ -193,6 +199,22 @@ export function useAssistantUi() {
     [coreStatus],
   );
 
+  useEffect(() => {
+    let disposeCompleted: (() => void) | undefined;
+    let disposeFailed: (() => void) | undefined;
+    void listen<RegionCapture>("region-selection-completed", (event) => {
+      setVisualContext(event.payload);
+      setContextChip(undefined);
+    }).then((next) => (disposeCompleted = next));
+    void listen<{ message: string }>("region-selection-failed", (event) => {
+      setToolActivity(event.payload.message);
+    }).then((next) => (disposeFailed = next));
+    return () => {
+      disposeCompleted?.();
+      disposeFailed?.();
+    };
+  }, []);
+
   const toggleListening = useCallback(async () => {
     if (!credential || coreStatus !== "connected") return;
     try {
@@ -230,15 +252,24 @@ export function useAssistantUi() {
         ].slice(-50),
       );
       try {
-        await sendChatMessage(normalized, credential);
+        await sendChatMessage(normalized, credential, visualContext?.captureId);
+        setVisualContext(undefined);
         return true;
       } catch {
         setCoreStatus("disconnected");
         return false;
       }
     },
-    [coreStatus, credential],
+    [coreStatus, credential, visualContext],
   );
+
+  const removeContext = useCallback(() => {
+    if (visualContext && credential) {
+      void discardScreenCapture(visualContext.captureId, credential);
+      setVisualContext(undefined);
+    }
+    setContextChip(undefined);
+  }, [credential, visualContext]);
 
   const decideConfirmation = useCallback(
     async (decision: ToolConfirmationDecision) => {
@@ -278,7 +309,8 @@ export function useAssistantUi() {
     confirmationError,
     toolActivity,
     contextChip,
-    removeContext: () => setContextChip(undefined),
+    visualContext,
+    removeContext,
     decideConfirmation,
   };
 }

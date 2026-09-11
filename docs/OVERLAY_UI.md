@@ -123,7 +123,8 @@ If a screenshot/region is captured, show a small preview or context chip and all
 For structured active-window/UI Automation context, show a restrained grayscale
 chip such as `Aktywne okno · kontekst gotowy`. It indicates that request-scoped
 context was used without exposing raw UI text and can be removed from the current
-view. Screenshot previews remain part of the later vision flow.
+view. A user-selected region is shown as a small reduced preview chip; removing
+it deletes the pending in-memory capture before generation.
 
 ## Region selection
 
@@ -133,7 +134,8 @@ Fallback hotkey/menu command:
 2. crosshair/drag rectangle;
 3. capture region;
 4. open overlay with preview;
-5. user asks `Co to znaczy?` or enters text.
+5. let the user remove the preview or attach it to the next question.
+6. user asks `Co to znaczy?` or enters text.
 
 ## Proactive suggestion bubble
 

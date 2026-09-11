@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
@@ -11,7 +11,7 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalSize, Manager, WebviewWindow,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use uuid::Uuid;
@@ -35,6 +35,15 @@ struct ConfirmationDecisionInput {
     tool_name: String,
     arguments_digest: String,
     decision: String,
+}
+
+#[derive(Clone, Serialize)]
+struct RegionSelectionGeometry {
+    left: i32,
+    top: i32,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
 }
 
 impl Drop for CoreSession {
@@ -285,6 +294,77 @@ fn set_overlay_mode(window: WebviewWindow, mode: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn begin_region_selection(app: AppHandle) -> Result<(), String> {
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Brak okna nakładki".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .or(main.primary_monitor().map_err(|error| error.to_string())?)
+        .ok_or_else(|| "Nie znaleziono monitora".to_string())?;
+    let selector = app
+        .get_webview_window("region-selector")
+        .ok_or_else(|| "Brak selektora regionu".to_string())?;
+    main.hide().map_err(|error| error.to_string())?;
+    selector
+        .set_position(PhysicalPosition::new(
+            monitor.position().x,
+            monitor.position().y,
+        ))
+        .map_err(|error| error.to_string())?;
+    selector
+        .set_size(PhysicalSize::new(
+            monitor.size().width,
+            monitor.size().height,
+        ))
+        .map_err(|error| error.to_string())?;
+    selector.show().map_err(|error| error.to_string())?;
+    selector.set_focus().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn region_selection_geometry(window: WebviewWindow) -> Result<RegionSelectionGeometry, String> {
+    if window.label() != "region-selector" {
+        return Err("Geometria jest dostępna tylko dla selektora".to_string());
+    }
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Nie znaleziono monitora".to_string())?;
+    Ok(RegionSelectionGeometry {
+        left: monitor.position().x,
+        top: monitor.position().y,
+        width: monitor.size().width,
+        height: monitor.size().height,
+        scale_factor: monitor.scale_factor(),
+    })
+}
+
+#[tauri::command]
+fn hide_region_selector(window: WebviewWindow) -> Result<(), String> {
+    if window.label() != "region-selector" {
+        return Err("Nieprawidłowe okno selektora".to_string());
+    }
+    window.hide().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn finish_region_selection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    hide_region_selector(window)?;
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Brak okna nakładki".to_string())?;
+    main.set_resizable(true)
+        .map_err(|error| error.to_string())?;
+    main.set_size(LogicalSize::new(EXPANDED_SIZE.0, EXPANDED_SIZE.1))
+        .map_err(|error| error.to_string())?;
+    main.show().map_err(|error| error.to_string())?;
+    main.set_focus().map_err(|error| error.to_string())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -292,7 +372,11 @@ pub fn run() {
             hide_overlay,
             set_overlay_mode,
             get_core_session_credential,
-            resolve_tool_confirmation
+            resolve_tool_confirmation,
+            begin_region_selection,
+            region_selection_geometry,
+            hide_region_selector,
+            finish_region_selection
         ])
         .setup(|app| {
             let credential = generate_core_credential();

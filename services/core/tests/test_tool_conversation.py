@@ -1,12 +1,16 @@
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
 import pytest
+from PIL import Image
 from pydantic import BaseModel, ConfigDict
 
+from moj_asystent_core.context import Bounds, WindowIdentity
 from moj_asystent_core.conversation import LocalConversationService
 from moj_asystent_core.llm import (
     LanguageModelRequest,
@@ -27,6 +31,11 @@ from moj_asystent_core.tools.engine import (
 )
 from moj_asystent_core.tools.models import PermissionLevel
 from moj_asystent_core.tools.policy import PermissionPolicyStore
+from moj_asystent_core.vision import (
+    VisionCaptureOutcome,
+    VisionImage,
+    VisionInspectionResult,
+)
 
 
 class Args(BaseModel):
@@ -115,6 +124,7 @@ async def test_conversation_executes_tool_and_returns_verified_result_to_model(
     result = json.loads(follow_up[-1].content)
     assert result["status"] == "success"
     assert result["output"] == {"observed": 7}
+    assert provider.requests[0].images == ()
 
 
 @pytest.mark.asyncio
@@ -148,3 +158,57 @@ async def test_conversation_stops_bounded_tool_loop(tmp_path: Path) -> None:
     with pytest.raises(ProviderProtocolError, match="maximum"):
         await service.respond(uuid4(), "Zapętl się", mode="text")
     assert len(provider.requests) == 5
+
+
+@pytest.mark.asyncio
+async def test_multimodal_turn_uses_one_ephemeral_image_and_keeps_tool_policy(
+    tmp_path: Path,
+) -> None:
+    buffer = BytesIO()
+    Image.new("RGB", (24, 16), "white").save(buffer, format="JPEG")
+    operation_id = uuid4()
+    capture_id = uuid4()
+    context_id = uuid4()
+    image = VisionImage(
+        capture_id=capture_id,
+        context_id=context_id,
+        operation_id=operation_id,
+        width=24,
+        height=16,
+        jpeg=bytearray(buffer.getvalue()),
+    )
+    result = VisionInspectionResult(
+        available=True,
+        context_id=context_id,
+        operation_id=operation_id,
+        capture_id=capture_id,
+        captured_at=datetime.now(UTC),
+        source="screen_region",
+        window_identity=WindowIdentity(handle=10, pid=20, process_started_at=1.0),
+        capture_bounds=Bounds(left=-100, top=10, right=-76, bottom=26),
+        monitor="monitor-2",
+        dpi_scale=1.5,
+        captured_width=24,
+        captured_height=16,
+        normalized_width=24,
+        normalized_height=16,
+        encoded_image_bytes=image.size_bytes,
+        vision_interpretation="pending",
+    )
+    provider = ScriptedProvider()
+    runtime = CoreRuntime()
+    service = LocalConversationService(
+        runtime, provider, tool_engine=tool_engine(runtime, tmp_path / "policy.json")
+    )
+
+    reply = await service.respond(
+        operation_id,
+        "Co jest na zaznaczonym fragmencie?",
+        mode="text",
+        visual=VisionCaptureOutcome(result=result, image=image),
+    )
+
+    assert reply.text == "Sprawdziłem wynik: 7."
+    assert len(provider.requests[0].images) == 1
+    assert provider.requests[1].images == ()
+    assert image.cleared

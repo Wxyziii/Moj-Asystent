@@ -4,6 +4,7 @@ import {
   Eye,
   Mic,
   MoreHorizontal,
+  Scan,
   Square,
   X,
 } from "lucide-react";
@@ -17,7 +18,7 @@ import {
   AssistantState,
   AssistantStateDefinition,
 } from "../domain/assistant";
-import type { CoreConnectionStatus } from "../lib/coreClient";
+import type { CoreConnectionStatus, RegionCapture } from "../lib/coreClient";
 import type { ConversationMessage } from "../hooks/useAssistant";
 import type { ToolConfirmationDecision } from "../lib/desktop";
 import { StatusOrb } from "./StatusOrb";
@@ -40,6 +41,8 @@ interface ConversationProps {
   confirmationError?: string;
   toolActivity?: string;
   contextChip?: string;
+  visualContext?: RegionCapture;
+  onSelectRegion?: () => void;
   onRemoveContext?: () => void;
   onConfirmationDecision: (decision: ToolConfirmationDecision) => void;
 }
@@ -61,6 +64,8 @@ export function Conversation({
   confirmationError,
   toolActivity,
   contextChip,
+  visualContext,
+  onSelectRegion,
   onRemoveContext,
   onConfirmationDecision,
 }: ConversationProps) {
@@ -149,14 +154,35 @@ export function Conversation({
           <span>Ten komputer</span>
           <span>{modelLabel}</span>
         </div>
-        {contextChip && (
+        <button
+          type="button"
+          className="region-select-button"
+          onClick={onSelectRegion}
+          disabled={coreStatus !== "connected" || isWorking}
+        >
+          <Scan size={14} aria-hidden="true" /> Wybierz fragment
+        </button>
+        {(contextChip || visualContext) && (
           <div className="context-chip" role="status">
-            <Eye size={14} aria-hidden="true" />
-            <span>{contextChip}</span>
+            {visualContext ? (
+              <img
+                src={visualContext.previewDataUrl}
+                alt="Podgląd wybranego fragmentu"
+              />
+            ) : (
+              <Eye size={14} aria-hidden="true" />
+            )}
+            <span>
+              {visualContext ? "Wybrany fragment · gotowy" : contextChip}
+            </span>
             <button
               type="button"
               onClick={onRemoveContext}
-              aria-label="Usuń kontekst aktywnego okna"
+              aria-label={
+                visualContext
+                  ? "Usuń wybrany fragment"
+                  : "Usuń kontekst aktywnego okna"
+              }
             >
               <X size={13} aria-hidden="true" />
             </button>

@@ -178,34 +178,43 @@ Completed scope:
 - typed, ephemeral context snapshots with provenance, unique IDs, timestamps, timings, truncation and foreground-window staleness checks;
 - password-control redaction, built-in and configurable exclusions, privacy-safe logs and a global disable switch;
 - on-demand Qwen tool use plus a restrained, removable desktop context indicator;
-- truthful unavailable screenshot seam; active-window/region image capture remains Milestone 8.
+- structured context remains the first choice, with a demand-driven visual fallback completed in Milestone 8.
 
-## Milestone 8 — Vision and diagnostics
+## Milestone 8 — Vision
 
-Status: `planned`
+Status: `complete`
 
 Deliverables:
 
 - multimodal Qwen screen input;
 - visible error explanation;
-- psutil telemetry;
-- NVML GPU telemetry;
-- bottleneck analysis.
+- bounded active-window and selected-region capture;
+- DPI-aware region selection with a removable reduced preview;
+- exclusions, stale-window rejection and short-lived image buffers.
 
-## Milestone 9 — Memory/routines
+System/GPU telemetry and bottleneck analysis remain Milestone 9 work.
+
+## Milestone 9 — System telemetry and diagnostics
+
+Status: `planned`
+
+Deliverables:
+
+- CPU/RAM/disk/network telemetry;
+- NVIDIA GPU/VRAM/temp/power telemetry;
+- per-process correlation and diagnostic summaries.
+
+## Milestone 10 — Memory/routines
 
 Status: `planned`
 
 Deliverables:
 
 - SQLite schema;
-- structured memories;
-- aliases;
-- routines;
-- permission persistence;
-- history controls.
+- structured memories, aliases and routines;
+- permission persistence and history controls.
 
-## Milestone 10 — Watchers/proactive assistance
+## Milestone 11 — Watchers/proactive assistance
 
 Status: `planned`
 
@@ -216,7 +225,7 @@ Deliverables:
 - event-driven AI escalation;
 - non-disruptive notifications.
 
-## Milestone 11 — Quality/deep routing
+## Milestone 12 — Quality/deep routing
 
 Status: `planned`
 

@@ -9,15 +9,24 @@ import sys
 from itertools import islice
 from pathlib import Path
 from typing import Final
+from uuid import UUID
 
 import psutil
 
 from ..context import (
     ActiveWindowSnapshot,
+    Bounds,
     ContextSettings,
     DesktopContextSnapshot,
     UiaWorker,
     WindowsContextService,
+)
+from ..vision import (
+    MssScreenshotBackend,
+    ScreenshotWorker,
+    VisionCaptureOutcome,
+    VisionCaptureService,
+    VisionSettings,
 )
 from ..windows_context import PywinautoUiaBackend, Win32WindowMetadataProvider
 from .models import (
@@ -41,7 +50,6 @@ from .models import (
     RestartProcessArguments,
     RunningProcessesArguments,
     RunningProcessesOutput,
-    ScreenInspectionUnavailableOutput,
     SetApplicationVolumeArguments,
     SetVolumeArguments,
     SystemStatsOutput,
@@ -182,14 +190,25 @@ class WindowsToolPlatform:
         approved_restart_paths: frozenset[Path] | None = None,
         context_service: WindowsContextService | None = None,
         context_settings: ContextSettings | None = None,
+        vision_service: VisionCaptureService | None = None,
+        vision_settings: VisionSettings | None = None,
     ) -> None:
         self.paths = path_policy or PathPolicy()
         self.approved_restart_paths = approved_restart_paths or frozenset()
         settings = context_settings or ContextSettings()
+        windows = Win32WindowMetadataProvider()
         self.context = context_service or WindowsContextService(
-            Win32WindowMetadataProvider(),
+            windows,
             UiaWorker(PywinautoUiaBackend),
             limits=settings.limits,
+            exclusions=settings.exclusions,
+            enabled=settings.enabled,
+        )
+        visual = vision_settings or VisionSettings()
+        self.vision = vision_service or VisionCaptureService(
+            windows,
+            ScreenshotWorker(MssScreenshotBackend),
+            limits=visual.limits,
             exclusions=settings.exclusions,
             enabled=settings.enabled,
         )
@@ -246,14 +265,35 @@ class WindowsToolPlatform:
     def read_ui_tree(self, args: ContextProviderArguments) -> DesktopContextSnapshot:
         return self.context.capture(args.reason)
 
-    def inspect_screen(self, _args: ContextProviderArguments) -> ScreenInspectionUnavailableOutput:
-        return ScreenInspectionUnavailableOutput()
+    def inspect_screen(
+        self, args: ContextProviderArguments, operation_id: UUID
+    ) -> VisionCaptureOutcome:
+        return self.vision.capture_active(args.reason, operation_id)
+
+    def capture_region(
+        self,
+        args: ContextProviderArguments,
+        operation_id: UUID,
+        *,
+        region: Bounds,
+        monitor_bounds: Bounds,
+        dpi_scale: float,
+    ) -> VisionCaptureOutcome:
+        return self.vision.capture_region(
+            args.reason,
+            operation_id,
+            region=region,
+            monitor_bounds=monitor_bounds,
+            dpi_scale=dpi_scale,
+        )
 
     def cancel_context(self) -> None:
         self.context.cancel()
+        self.vision.cancel()
 
     def close(self) -> None:
         self.context.close()
+        self.vision.close()
 
     def list_directory(self, args: ListDirectoryArguments) -> ListDirectoryOutput:
         directory = self.paths.existing_directory(args.path)

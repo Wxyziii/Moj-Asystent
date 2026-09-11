@@ -2,8 +2,8 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Structured Windows context",
-    "status": "Milestone 7 complete — bounded active-window and UI Automation context",
+    "stage": "Selective local vision",
+    "status": "Milestone 8 complete — bounded, demand-driven screenshot understanding",
     "updated": "2026-09-11"
   },
   "principles": [
@@ -76,30 +76,46 @@
     },
     {
       "id": 8,
-      "name": "Vision & diagnostics",
-      "status": "planned",
-      "description": "Multimodal screen understanding plus system/GPU telemetry."
+      "name": "Vision",
+      "status": "done",
+      "description": "Ephemeral active-window and region capture with local Qwen multimodal understanding."
     },
     {
       "id": 9,
+      "name": "System diagnostics",
+      "status": "planned",
+      "description": "CPU, memory, disk, network and GPU telemetry with bounded diagnostic summaries."
+    },
+    {
+      "id": 10,
       "name": "Memory & routines",
       "status": "planned",
       "description": "SQLite memory, aliases, preferences and reusable routines."
     },
     {
-      "id": 10,
+      "id": 11,
       "name": "Watchers",
       "status": "planned",
       "description": "Event-driven proactive monitoring and notifications."
     },
     {
-      "id": 11,
+      "id": 12,
       "name": "Deep model routing",
       "status": "planned",
       "description": "Quality tier and optional CPU/GPU hybrid reasoning."
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "title": "Milestone 8: selective local vision",
+      "items": [
+        "Added bounded memory-only active-window and single-monitor region capture with stale-window and exclusion checks.",
+        "Extended the existing Ollama/Qwen conversation boundary with one ephemeral normalized image per request.",
+        "Completed inspect_screen metadata and a DPI-aware Tauri region selector with a removable reduced preview.",
+        "Kept visual text untrusted and all post-vision actions behind the typed permission and confirmation engine."
+      ]
+    },
     {
       "date": "2026-09-11",
       "title": "Milestone 7: structured Windows context",

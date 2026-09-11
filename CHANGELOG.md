@@ -6,12 +6,18 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 8 demand-driven active-window and single-monitor region screenshots using bounded in-memory `mss` capture and Pillow RGB/JPEG normalization.
+- Existing Ollama/Qwen provider now accepts one ephemeral image beside normal text and tool calls; screenshot bytes never enter ordinary tool-result text, protocol events or conversation history.
+- Real `inspect_screen` visual-context metadata with immutable window identity, context/operation/capture IDs, bounds, timings, privacy exclusions and stale-window rejection.
+- Polish Tauri region selector with high-DPI/negative-coordinate conversion, dimmed drag UI, reduced preview chip and removal before generation.
+- Deterministic visual-question escalation, strict size/pixel/time limits, cancellation cleanup and visual prompt-injection protections.
+
 - Milestone 7 request-scoped Windows context with best-effort active-window metadata, bounded UI Automation traversal and selected/focused text where supported.
 - Dedicated MTA/COM worker lifecycle with bounded queueing, cancellation, timeout handling and stale-window result rejection.
 - Typed ephemeral context snapshots with provenance, unique IDs, timestamps, timing data and explicit unavailable/truncation states.
 - Password-control redaction, sensitive-application/title exclusions, privacy-safe logging and configurable collection limits.
 - On-demand `get_active_window` / `read_ui_tree` model tools and a restrained removable context indicator in the desktop conversation.
-- Windows context regression coverage plus safe manual Explorer and Notepad validation; screenshot/vision remains explicitly deferred to Milestone 8.
+- Windows context regression coverage plus safe manual Explorer and Notepad validation.
 
 - Milestone 6 typed tool engine with the exact 18 planned read, safe-action and confirmation-required capabilities; Windows UI-tree/screen tools remain honest Milestone 7 provider seams.
 - Strict Pydantic tool input/output validation, model-facing JSON Schemas, deterministic implementations, bounded execution and structured results returned to Qwen before final responses.

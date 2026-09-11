@@ -21,6 +21,30 @@ export async function hideOverlay() {
   }
 }
 
+export interface RegionSelectionGeometry {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  scale_factor: number;
+}
+
+export async function beginRegionSelection(): Promise<void> {
+  await invoke("begin_region_selection");
+}
+
+export async function getRegionSelectionGeometry(): Promise<RegionSelectionGeometry> {
+  return invoke<RegionSelectionGeometry>("region_selection_geometry");
+}
+
+export async function hideRegionSelector(): Promise<void> {
+  await invoke("hide_region_selector");
+}
+
+export async function finishRegionSelection(): Promise<void> {
+  await invoke("finish_region_selection");
+}
+
 export async function getCoreSessionCredential(): Promise<string> {
   return invoke<string>("get_core_session_credential");
 }

@@ -8,6 +8,7 @@ from .api import CoreSettings, create_app
 from .audio import AudioConfig
 from .auth import SessionCredential
 from .context import ContextSettings
+from .vision import VisionSettings
 
 
 def create_server(settings: CoreSettings) -> uvicorn.Server:
@@ -44,5 +45,6 @@ def main() -> None:
             ollama_url=os.environ.get("MOJ_ASYSTENT_OLLAMA_URL", "http://127.0.0.1:11434"),
             llm_model=os.environ.get("MOJ_ASYSTENT_LLM_MODEL", "qwen3.5:4b"),
             context=ContextSettings.from_environment(),
+            vision=VisionSettings.from_environment(),
         )
     ).run()

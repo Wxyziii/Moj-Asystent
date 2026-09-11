@@ -16,6 +16,7 @@ from .llm import (
     LanguageModelRequest,
     ModelStatus,
     ModelTextDelta,
+    ModelToolCall,
     ModelToolCallDelta,
     ProviderProtocolError,
     ProviderUnavailableError,
@@ -24,6 +25,7 @@ from .protocol import ModelStatusChangedPayload
 from .runtime import CoreRuntime
 from .tools.engine import ToolEngine
 from .tools.models import JsonValue
+from .vision import PendingVisionStore, VisionCaptureOutcome, VisionImage
 
 MAX_TOOL_ITERATIONS = 4
 
@@ -58,7 +60,12 @@ class LocalConversationService:
         return status
 
     async def respond(
-        self, operation_id: UUID, user_text: str, *, mode: Literal["voice", "text"]
+        self,
+        operation_id: UUID,
+        user_text: str,
+        *,
+        mode: Literal["voice", "text"],
+        visual: VisionCaptureOutcome | None = None,
     ) -> ConversationReply:
         async with self._lock:
             status = await self.refresh_status()
@@ -69,7 +76,7 @@ class LocalConversationService:
             )
             self._runtime.publish_response_started(operation_id, model=self.model, mode=mode)
             try:
-                answer = await self._run_model_loop(operation_id, user_text)
+                answer = await self._run_model_loop(operation_id, user_text, visual)
                 if not answer:
                     raise ProviderProtocolError("Local model returned an empty response")
                 spoken = concise_spoken_response(answer)
@@ -101,19 +108,55 @@ class LocalConversationService:
                     )
                 )
                 raise
+            finally:
+                if visual is not None:
+                    visual.clear()
+                if self._tool_engine is not None:
+                    self._tool_engine.release_operation(operation_id)
 
-    async def _run_model_loop(self, operation_id: UUID, user_text: str) -> str:
+    async def _run_model_loop(
+        self,
+        operation_id: UUID,
+        user_text: str,
+        visual: VisionCaptureOutcome | None,
+    ) -> str:
         messages = list(self._context.messages_for(user_text))
         tools = self._tool_engine.registry.model_definitions() if self._tool_engine else ()
+        next_images: tuple[VisionImage, ...] = ()
+        if visual is not None and visual.image is not None:
+            next_images = (visual.image,)
+            messages.extend(_visual_context_messages(visual))
+        elif self._tool_engine is not None and _requires_visual_capture(user_text):
+            call = ModelToolCall(
+                call_id=uuid4(),
+                name="inspect_screen",
+                arguments={"reason": user_text[:256]},
+            )
+            messages.append(ChatMessage(role="assistant", content="", tool_calls=(call,)))
+            result = await self._tool_engine.execute(
+                operation_id=operation_id,
+                call_id=call.call_id,
+                tool_name=call.name,
+                arguments=call.arguments,
+            )
+            messages.append(_tool_message(call.name, result.model_dump(mode="json")))
+            next_images = self._tool_engine.take_images(operation_id, call.call_id)
         for iteration in range(MAX_TOOL_ITERATIONS + 1):
             text_chunks: list[str] = []
             tool_calls = []
-            request = LanguageModelRequest(messages=tuple(messages), tools=tools)
-            async for event in self._provider.stream_turn(request):
-                if isinstance(event, ModelTextDelta):
-                    text_chunks.append(event.text)
-                elif isinstance(event, ModelToolCallDelta):
-                    tool_calls.append(event.call)
+            request_images, next_images = next_images, ()
+            request = LanguageModelRequest(
+                messages=tuple(messages), tools=tools, images=request_images
+            )
+            try:
+                async for event in self._provider.stream_turn(request):
+                    if isinstance(event, ModelTextDelta):
+                        text_chunks.append(event.text)
+                    elif isinstance(event, ModelToolCallDelta):
+                        tool_calls.append(event.call)
+            finally:
+                for image in request_images:
+                    image.clear()
 
             if not tool_calls:
                 for sequence, chunk in enumerate(text_chunks):
@@ -132,18 +175,32 @@ class LocalConversationService:
                     tool_name=call.name,
                     arguments=call.arguments,
                 )
-                safe_result = cast_tool_result(result.model_dump(mode="json"))
-                messages.append(
-                    ChatMessage(
-                        role="tool",
-                        tool_name=call.name,
-                        content=json.dumps(
-                            safe_result,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
+                serialized_result = result.model_dump(mode="json")
+                messages.append(_tool_message(call.name, serialized_result))
+                images = self._tool_engine.take_images(operation_id, call.call_id)
+                if images:
+                    for old in next_images:
+                        old.clear()
+                    next_images = images
+                if call.name == "read_ui_tree" and _uia_is_sparse(serialized_result):
+                    vision_call = ModelToolCall(
+                        call_id=uuid4(),
+                        name="inspect_screen",
+                        arguments={"reason": "Dane UI Automation są niewystarczające"},
                     )
-                )
+                    messages.append(
+                        ChatMessage(role="assistant", content="", tool_calls=(vision_call,))
+                    )
+                    vision_result = await self._tool_engine.execute(
+                        operation_id=operation_id,
+                        call_id=vision_call.call_id,
+                        tool_name=vision_call.name,
+                        arguments=vision_call.arguments,
+                    )
+                    messages.append(
+                        _tool_message(vision_call.name, vision_result.model_dump(mode="json"))
+                    )
+                    next_images = self._tool_engine.take_images(operation_id, vision_call.call_id)
         raise ProviderProtocolError("Model tool loop did not complete")
 
     async def close(self) -> None:
@@ -163,20 +220,39 @@ class LocalConversationService:
 class TextChatController:
     """Owns at most one typed generation and cancels it during shutdown/replacement."""
 
-    def __init__(self, runtime: CoreRuntime, conversation: LocalConversationService) -> None:
+    def __init__(
+        self,
+        runtime: CoreRuntime,
+        conversation: LocalConversationService,
+        vision_store: PendingVisionStore | None = None,
+    ) -> None:
         self._runtime = runtime
         self._conversation = conversation
         self._task: asyncio.Task[None] | None = None
         self._operation_id: UUID | None = None
+        self._vision_store = vision_store
 
-    async def start(self, text: str) -> UUID:
+    async def start(self, text: str, visual_context_id: UUID | None = None) -> UUID:
         await self.cancel()
+        visual = (
+            self._vision_store.take(visual_context_id)
+            if self._vision_store is not None and visual_context_id is not None
+            else None
+        )
+        if visual_context_id is not None and visual is None:
+            raise ValueError("Visual context is missing or expired")
         operation_id = uuid4()
-        self._operation_id = operation_id
-        if self._runtime.state == "error":
-            self._runtime.transition("idle", expected_state="error")
-        self._runtime.transition("thinking", expected_state="idle")
-        self._task = asyncio.create_task(self._run(operation_id, text))
+        try:
+            self._operation_id = operation_id
+            if self._runtime.state == "error":
+                self._runtime.transition("idle", expected_state="error")
+            self._runtime.transition("thinking", expected_state="idle")
+            self._task = asyncio.create_task(self._run(operation_id, text, visual))
+        except Exception:
+            self._operation_id = None
+            if visual is not None:
+                visual.clear()
+            raise
         return operation_id
 
     async def cancel(self) -> None:
@@ -192,9 +268,11 @@ class TextChatController:
     async def shutdown(self) -> None:
         await self.cancel()
 
-    async def _run(self, operation_id: UUID, text: str) -> None:
+    async def _run(
+        self, operation_id: UUID, text: str, visual: VisionCaptureOutcome | None
+    ) -> None:
         try:
-            await self._conversation.respond(operation_id, text, mode="text")
+            await self._conversation.respond(operation_id, text, mode="text", visual=visual)
             if self._operation_id == operation_id and self._runtime.state == "thinking":
                 self._runtime.transition("idle", expected_state="thinking")
         except asyncio.CancelledError:
@@ -203,6 +281,8 @@ class TextChatController:
             if self._operation_id == operation_id and self._runtime.state == "thinking":
                 self._runtime.transition("error", expected_state="thinking")
         finally:
+            if visual is not None:
+                visual.clear()
             if self._operation_id == operation_id:
                 self._operation_id = None
             if self._task is asyncio.current_task():
@@ -223,3 +303,58 @@ def cast_tool_result(value: object) -> dict[str, JsonValue]:
     if not isinstance(value, dict):
         raise ProviderProtocolError("Tool result could not be serialized")
     return value
+
+
+def _tool_message(tool_name: str, value: object) -> ChatMessage:
+    safe_result = cast_tool_result(value)
+    return ChatMessage(
+        role="tool",
+        tool_name=tool_name,
+        content=json.dumps(safe_result, ensure_ascii=False, separators=(",", ":")),
+    )
+
+
+def _visual_context_messages(outcome: VisionCaptureOutcome) -> list[ChatMessage]:
+    metadata = outcome.result.model_dump(mode="json")
+    return [
+        ChatMessage(
+            role="assistant",
+            content="",
+            tool_calls=(
+                ModelToolCall(
+                    call_id=uuid4(), name="inspect_screen", arguments={"reason": "region"}
+                ),
+            ),
+        ),
+        _tool_message("inspect_screen", {"status": "success", "output": metadata}),
+    ]
+
+
+def _requires_visual_capture(text: str) -> bool:
+    normalized = text.casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "wykres",
+            "kolor",
+            "ikon",
+            "wizual",
+            "na ekranie",
+            "zaznaczon",
+            "obraz",
+            "wygląda",
+        )
+    )
+
+
+def _uia_is_sparse(value: object) -> bool:
+    if not isinstance(value, dict) or value.get("status") != "success":
+        return False
+    output = value.get("output")
+    if not isinstance(output, dict) or output.get("available") is False:
+        return True
+    tree = output.get("ui_tree")
+    if not isinstance(tree, dict):
+        return True
+    nodes = tree.get("nodes")
+    return not isinstance(nodes, list) or len(nodes) < 3

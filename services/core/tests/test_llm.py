@@ -1,17 +1,24 @@
 import json
+from base64 import b64encode
+from io import BytesIO
+from uuid import uuid4
 
 import httpx
 import pytest
+from PIL import Image
 
 from moj_asystent_core.llm import (
+    SYSTEM_PROMPT,
     ConversationContext,
     LanguageModelRequest,
     ModelStatus,
     ModelToolCallDelta,
     OllamaLanguageModelProvider,
     ProviderProtocolError,
+    ProviderUnavailableError,
 )
 from moj_asystent_core.tools.models import ModelToolDefinition
+from moj_asystent_core.vision import VisionCaptureInvalid, VisionImage
 
 
 def response(lines: list[dict[str, object]], status: int = 200) -> httpx.Response:
@@ -19,6 +26,19 @@ def response(lines: list[dict[str, object]], status: int = 200) -> httpx.Respons
         status,
         content=b"\n".join(json.dumps(line).encode() for line in lines),
         headers={"content-type": "application/x-ndjson"},
+    )
+
+
+def model_image() -> VisionImage:
+    output = BytesIO()
+    Image.new("RGB", (12, 8), (20, 40, 60)).save(output, format="JPEG")
+    return VisionImage(
+        capture_id=uuid4(),
+        context_id=uuid4(),
+        operation_id=uuid4(),
+        width=12,
+        height=8,
+        jpeg=bytearray(output.getvalue()),
     )
 
 
@@ -168,6 +188,79 @@ async def test_ollama_uses_structured_tool_calling_and_validates_calls() -> None
     assert events[0].call.name == "get_system_stats"
     assert seen["tools"] == [tool.model_dump(mode="json")]
     assert "RUN:" not in json.dumps(seen)
+
+
+@pytest.mark.asyncio
+async def test_ollama_multimodal_request_uses_official_message_images_shape() -> None:
+    seen: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return response(
+            [{"message": {"role": "assistant", "content": "Widzę okno."}, "done": True}]
+        )
+
+    image = model_image()
+    expected = b64encode(image.bytes_for_provider()).decode("ascii")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OllamaLanguageModelProvider(client=client)
+        events = [
+            event
+            async for event in provider.stream_turn(
+                LanguageModelRequest(
+                    messages=(
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": "Co jest na obrazie?"},
+                    ),
+                    images=(image,),
+                )
+            )
+        ]
+
+    messages = seen["messages"]
+    assert isinstance(messages, list)
+    assert messages[-1] == {
+        "role": "user",
+        "content": "Co jest na obrazie?",
+        "images": [expected],
+    }
+    assert "niezaufan" in messages[0]["content"]
+    assert events[0].text == "Widzę okno."
+    assert image.cleared is False
+    image.clear()
+
+
+@pytest.mark.asyncio
+async def test_multimodal_provider_timeout_fails_without_reclassifying_success() -> None:
+    async def timeout(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timeout", request=request)
+
+    image = model_image()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(timeout)) as client:
+        provider = OllamaLanguageModelProvider(client=client)
+        with pytest.raises(ProviderUnavailableError):
+            _ = [
+                event
+                async for event in provider.stream_turn(
+                    LanguageModelRequest(
+                        messages=({"role": "user", "content": "Sprawdź obraz"},),
+                        images=(image,),
+                    )
+                )
+            ]
+    image.clear()
+
+
+def test_malformed_image_payload_is_rejected_before_provider_use() -> None:
+    with pytest.raises(VisionCaptureInvalid):
+        VisionImage(
+            capture_id=uuid4(),
+            context_id=uuid4(),
+            operation_id=uuid4(),
+            width=10,
+            height=10,
+            jpeg=bytearray(b"not-an-image"),
+        )
 
 
 def test_context_is_polish_bounded_and_keeps_complete_recent_turns() -> None:

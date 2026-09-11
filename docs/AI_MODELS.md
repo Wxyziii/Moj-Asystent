@@ -188,6 +188,13 @@ For each request:
 4. trim irrelevant data;
 5. send the smallest useful request.
 
+For multimodal requests, the existing Ollama provider adds at most one bounded
+JPEG image to the relevant user message. The image is an ephemeral side input,
+not a second vision conversation and not part of retained conversation history.
+Visible image text is untrusted observation and cannot authorize tools or alter
+the system prompt. Any action proposed after visual analysis still traverses the
+typed registry, local policy and confirmation flow.
+
 ## Future model evaluation
 
 Benchmark candidates using real project tasks, not generic leaderboards.

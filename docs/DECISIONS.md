@@ -147,6 +147,18 @@ Order:
 
 No continuous full-screen vision inference.
 
+## 2026-09-11 — Ephemeral multimodal screenshot side channel
+
+Decision: screenshot bytes travel only as a single-use in-memory attachment to
+the existing Ollama conversation request. Ordinary tool results and Protocol
+events contain metadata only. Region selection uses an authenticated local HTTP
+endpoint and returns a reduced preview to the webview; this does not change the
+Protocol 1.3 event schema.
+
+Reason: this preserves one conversation/provider boundary, prevents image data
+from entering history or the event stream, and makes completion, cancellation,
+expiry and shutdown cleanup deterministic.
+
 ## 2026-09-11 — Request-scoped Windows context on a dedicated COM worker
 
 Decision: Milestone 7 provides structured active-window and Windows UI

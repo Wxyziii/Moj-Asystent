@@ -75,12 +75,6 @@ class ContextProviderArguments(StrictModel):
     reason: Annotated[str, Field(min_length=1, max_length=256)]
 
 
-class ScreenInspectionUnavailableOutput(StrictModel):
-    available: Literal[False] = False
-    reason: Literal["vision_not_implemented"] = "vision_not_implemented"
-    planned_milestone: Literal[8] = 8
-
-
 class PathArguments(StrictModel):
     path: Annotated[str, Field(min_length=1, max_length=1_024)]
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { CompactOverlay } from "./components/CompactOverlay";
 import { Conversation } from "./components/Conversation";
+import { RegionSelector } from "./components/RegionSelector";
 import { SettingsShell } from "./components/SettingsShell";
 import { WakeOnboarding } from "./components/WakeOnboarding";
 import {
@@ -9,10 +10,20 @@ import {
   type OverlayMode,
 } from "./domain/assistant";
 import { useAssistantUi } from "./hooks/useAssistant";
-import { hideOverlay, requestDesktopMode } from "./lib/desktop";
+import {
+  beginRegionSelection,
+  hideOverlay,
+  requestDesktopMode,
+} from "./lib/desktop";
 import { getOnboardingStatus } from "./lib/onboardingClient";
 
 export default function App() {
+  if (new URLSearchParams(window.location.search).has("region-selector"))
+    return <RegionSelector />;
+  return <AssistantApp />;
+}
+
+function AssistantApp() {
   const onboardingPreview =
     import.meta.env.DEV &&
     new URLSearchParams(window.location.search).has("onboarding-preview");
@@ -33,6 +44,7 @@ export default function App() {
     confirmationError,
     toolActivity,
     contextChip,
+    visualContext,
     removeContext,
     decideConfirmation,
   } = useAssistantUi();
@@ -133,6 +145,8 @@ export default function App() {
         confirmationError={confirmationError}
         toolActivity={toolActivity}
         contextChip={contextChip}
+        visualContext={visualContext}
+        onSelectRegion={() => void beginRegionSelection()}
         onRemoveContext={removeContext}
         onConfirmationDecision={(decision) => void decideConfirmation(decision)}
       />

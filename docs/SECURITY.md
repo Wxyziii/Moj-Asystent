@@ -139,7 +139,15 @@ metadata such as process name, node count, truncation, elapsed time and error
 class—not window titles, selected text or UI content. Accessibility metadata is
 not a perfect secret classifier, and same-user malware remains outside this
 boundary; users should exclude any additional sensitive applications. Screenshot
-capture and vision are not implemented in Milestone 7.
+capture and vision are demand-driven in Milestone 8. Screenshot capture checks
+the exclusion policy before pixel allocation, rechecks exact foreground identity
+after capture, never writes ordinary captures to disk, and clears bounded buffers
+after use. There is no reliable pixel-level password redaction: exclusions and
+explicit user control are the primary screenshot protections. Full-resolution
+images are not exposed to the webview; only a bounded reduced preview is.
+
+Image text is untrusted data, including text that resembles instructions. Vision
+cannot bypass the typed tool registry, permission policy or confirmations.
 
 ## Microphone privacy
 

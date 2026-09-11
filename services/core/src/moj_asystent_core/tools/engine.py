@@ -12,6 +12,7 @@ from uuid import UUID
 from pydantic import BaseModel, ValidationError
 
 from ..context import ActiveWindowSnapshot, DesktopContextSnapshot
+from ..vision import VisionCaptureOutcome, VisionImage, VisionInspectionResult
 from .confirmations import ConfirmationManager, ConfirmationRejected, ConfirmationRequest
 from .models import (
     ActionOutput,
@@ -37,7 +38,6 @@ from .models import (
     RestartProcessArguments,
     RunningProcessesArguments,
     RunningProcessesOutput,
-    ScreenInspectionUnavailableOutput,
     SetApplicationVolumeArguments,
     SetVolumeArguments,
     SystemStatsOutput,
@@ -92,6 +92,9 @@ class ToolDefinition:
     confirmation: Callable[[BaseModel], ConfirmationPresentation]
     prepare: Callable[[BaseModel], BaseModel] = lambda value: value
     cancel: Callable[[], None] = lambda: None
+    contextual_implementation: (
+        Callable[[BaseModel, UUID], BaseModel | VisionCaptureOutcome] | None
+    ) = None
 
     def model_definition(self) -> ModelToolDefinition:
         parameters = cast(dict[str, JsonValue], self.input_model.model_json_schema())
@@ -150,6 +153,7 @@ class ToolEngine:
         self.confirmations = confirmations
         self.events = events
         self._cleanup = cleanup
+        self._images: dict[tuple[UUID, UUID], tuple[VisionImage, ...]] = {}
 
     async def execute(
         self,
@@ -258,12 +262,33 @@ class ToolEngine:
                     )
 
         self.events.publish_tool_status(operation_id, call_id, definition.name, "executing")
+        captured_image: VisionImage | None = None
         try:
-            output = await asyncio.wait_for(
-                asyncio.to_thread(definition.implementation, validated),
-                timeout=definition.timeout_seconds,
-            )
+            if definition.contextual_implementation is None:
+                executed = await asyncio.wait_for(
+                    asyncio.to_thread(definition.implementation, validated),
+                    timeout=definition.timeout_seconds,
+                )
+            else:
+                executed = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        definition.contextual_implementation, validated, operation_id
+                    ),
+                    timeout=definition.timeout_seconds,
+                )
+            if isinstance(executed, VisionCaptureOutcome):
+                output = executed.result
+                if executed.preview is not None:
+                    executed.preview[:] = b"\0" * len(executed.preview)
+                    executed.preview.clear()
+                    executed.preview = None
+                if executed.image is not None:
+                    captured_image = executed.image
+            else:
+                output = executed
             checked = definition.output_model.model_validate(output)
+            if captured_image is not None:
+                self._images[(operation_id, call_id)] = (captured_image,)
             result = ToolExecutionResult(
                 tool_name=definition.name,
                 status=ToolStatus.SUCCESS,
@@ -287,18 +312,24 @@ class ToolEngine:
             self.events.publish_tool_result(operation_id, call_id, result)
             raise
         except (ToolPlatformError, ValidationError) as error:
+            if captured_image is not None:
+                captured_image.clear()
             result = ToolExecutionResult(
                 tool_name=definition.name,
                 status=ToolStatus.FAILURE,
                 message=_safe_error_message(error),
             )
         except OSError:
+            if captured_image is not None:
+                captured_image.clear()
             result = ToolExecutionResult(
                 tool_name=definition.name,
                 status=ToolStatus.FAILURE,
                 message="System operacyjny odrzucił wykonanie narzędzia.",
             )
         except Exception:
+            if captured_image is not None:
+                captured_image.clear()
             result = ToolExecutionResult(
                 tool_name=definition.name,
                 status=ToolStatus.FAILURE,
@@ -313,12 +344,26 @@ class ToolEngine:
 
     def cancel_operation(self, operation_id: UUID) -> None:
         self.confirmations.cancel_operation(operation_id)
+        self.release_operation(operation_id)
+
+    def take_images(self, operation_id: UUID, call_id: UUID) -> tuple[VisionImage, ...]:
+        return self._images.pop((operation_id, call_id), ())
+
+    def release_operation(self, operation_id: UUID) -> None:
+        keys = [key for key in self._images if key[0] == operation_id]
+        for key in keys:
+            for image in self._images.pop(key):
+                image.clear()
 
     def cancel_all_confirmations(self) -> None:
         self.confirmations.cancel_all()
 
     def shutdown(self) -> None:
         self.confirmations.shutdown()
+        for images in self._images.values():
+            for image in images:
+                image.clear()
+        self._images.clear()
         self._cleanup()
 
     def _publish_result(
@@ -364,6 +409,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
         risk: str = "Działanie zmieni stan komputera.",
         prepare: Callable[[BaseModel], BaseModel] = lambda value: value,
         cancel: Callable[[], None] = lambda: None,
+        contextual: Callable[[BaseModel, UUID], BaseModel | VisionCaptureOutcome] | None = None,
     ) -> ToolDefinition:
         return ToolDefinition(
             name=name,
@@ -384,6 +430,7 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             ),
             prepare=prepare,
             cancel=cancel,
+            contextual_implementation=contextual,
         )
 
     def prepare_move(value: BaseModel) -> MoveFileArguments:
@@ -393,6 +440,9 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
             destination=str(platform.paths.destination_file(arguments.destination)),
             overwrite=False,
         )
+
+    def unavailable_vision_implementation(_: BaseModel) -> BaseModel:
+        raise RuntimeError("Vision requires operation context")
 
     return (
         definition(
@@ -441,14 +491,20 @@ def _definitions(platform: WindowsToolPlatform) -> tuple[ToolDefinition, ...]:
         ),
         definition(
             "inspect_screen",
-            "Sprawdź dostępność analizy obrazu. Zrzuty ekranu i analiza obrazu "
-            "pojawią się dopiero w Milestone 8.",
+            "Przechwyć ograniczony obraz aktywnego okna do lokalnej analizy wizualnej. "
+            "Używaj tylko na wyraźne pytanie o wygląd, układ, kolor, ikonę lub wykres, "
+            "albo gdy wcześniej odczytane dane UI są niewystarczające.",
             ContextProviderArguments,
-            ScreenInspectionUnavailableOutput,
+            VisionInspectionResult,
             PermissionLevel.READ,
-            lambda value: platform.inspect_screen(cast(ContextProviderArguments, value)),
+            unavailable_vision_implementation,
+            timeout=5,
             category="context.read",
             action="Sprawdzić ekran?",
+            cancel=platform.cancel_context,
+            contextual=lambda value, operation_id: platform.inspect_screen(
+                cast(ContextProviderArguments, value), operation_id
+            ),
         ),
         definition(
             "list_directory",
