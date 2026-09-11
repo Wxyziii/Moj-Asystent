@@ -6,7 +6,10 @@ import {
   Square,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import type { ModelStatusChanged } from "@moj-asystent/protocol";
+import type {
+  ModelStatusChanged,
+  ToolConfirmationRequested,
+} from "@moj-asystent/protocol";
 import {
   assistantStates,
   AssistantState,
@@ -14,6 +17,7 @@ import {
 } from "../domain/assistant";
 import type { CoreConnectionStatus } from "../lib/coreClient";
 import type { ConversationMessage } from "../hooks/useAssistant";
+import type { ToolConfirmationDecision } from "../lib/desktop";
 import { StatusOrb } from "./StatusOrb";
 import { Waveform } from "./Waveform";
 
@@ -29,6 +33,11 @@ interface ConversationProps {
   onToggleListening: () => void;
   onSendMessage: (text: string) => Promise<boolean>;
   modelStatus?: ModelStatusChanged["payload"];
+  pendingConfirmation?: ToolConfirmationRequested["payload"];
+  confirmationBusy: boolean;
+  confirmationError?: string;
+  toolActivity?: string;
+  onConfirmationDecision: (decision: ToolConfirmationDecision) => void;
 }
 
 export function Conversation({
@@ -43,6 +52,11 @@ export function Conversation({
   onToggleListening,
   onSendMessage,
   modelStatus,
+  pendingConfirmation,
+  confirmationBusy,
+  confirmationError,
+  toolActivity,
+  onConfirmationDecision,
 }: ConversationProps) {
   const [prompt, setPrompt] = useState("");
   const isWorking = ["thinking", "transcribing", "speaking"].includes(state);
@@ -50,7 +64,10 @@ export function Conversation({
     state,
   );
   const canSend =
-    coreStatus === "connected" && prompt.trim().length > 0 && !isWorking;
+    coreStatus === "connected" &&
+    prompt.trim().length > 0 &&
+    !isWorking &&
+    !pendingConfirmation;
   const modelLabel =
     modelStatus?.status === "ready"
       ? `${modelStatus.model} · lokalnie`
@@ -156,6 +173,62 @@ export function Conversation({
             </div>
           </article>
         )}
+        {pendingConfirmation && (
+          <article className="confirmation-card" aria-live="assertive">
+            <p className="confirmation-card__eyebrow">Wymaga Twojej zgody</p>
+            <h2>{pendingConfirmation.action}</h2>
+            <p className="confirmation-card__target">
+              {pendingConfirmation.target}
+            </p>
+            {pendingConfirmation.details.length > 0 && (
+              <dl>
+                {pendingConfirmation.details.map((detail) => (
+                  <div key={`${detail.label}-${detail.value}`}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <p className="confirmation-card__risk">
+              {pendingConfirmation.risk}
+            </p>
+            {confirmationError && (
+              <p className="confirmation-card__error">{confirmationError}</p>
+            )}
+            <div className="confirmation-card__actions">
+              <button
+                type="button"
+                onClick={() => onConfirmationDecision("cancel")}
+                disabled={confirmationBusy}
+              >
+                Anuluj
+              </button>
+              {pendingConfirmation.persistent_allowed && (
+                <button
+                  type="button"
+                  onClick={() => onConfirmationDecision("always_allow")}
+                  disabled={confirmationBusy}
+                >
+                  Zawsze zezwalaj
+                </button>
+              )}
+              <button
+                type="button"
+                className="confirmation-card__allow"
+                onClick={() => onConfirmationDecision("allow")}
+                disabled={confirmationBusy}
+              >
+                {confirmationBusy ? "Przekazuję…" : "Zezwól raz"}
+              </button>
+            </div>
+          </article>
+        )}
+        {!pendingConfirmation && toolActivity && (
+          <p className="tool-activity" role="status">
+            {toolActivity}
+          </p>
+        )}
       </section>
 
       <form className="composer" onSubmit={submit}>
@@ -167,7 +240,7 @@ export function Conversation({
           placeholder="Zapytaj…"
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          disabled={coreStatus !== "connected"}
+          disabled={coreStatus !== "connected" || Boolean(pendingConfirmation)}
           maxLength={8_192}
           aria-describedby="composer-help"
         />
@@ -177,6 +250,7 @@ export function Conversation({
             : modelStatus?.detail || "Rozmowa jest przetwarzana lokalnie."}
         </span>
         <button
+          type="button"
           className={`mic-button ${isListening ? "mic-button--active" : ""}`}
           onClick={onToggleListening}
           disabled={coreStatus !== "connected"}

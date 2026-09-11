@@ -30,7 +30,7 @@ async def test_stubs_substitute_at_the_real_provider_interfaces() -> None:
     with pytest.raises(ProviderUnavailableError):
         _ = [
             chunk
-            async for chunk in llm.stream(
+            async for chunk in llm.stream_turn(
                 LanguageModelRequest(messages=({"role": "user", "content": "test"},))
             )
         ]

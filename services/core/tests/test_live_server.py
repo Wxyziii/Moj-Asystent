@@ -23,12 +23,12 @@ PROTOCOLS = (Subprotocol("moj-asystent.v1"), Subprotocol(f"credential.{TOKEN}"))
 
 def hello() -> dict:
     return {
-        "protocol_version": "1.2",
+        "protocol_version": "1.3",
         "event_id": str(uuid4()),
         "occurred_at": "2026-09-09T20:00:00Z",
         "correlation_id": None,
         "type": "client.hello",
-        "payload": {"client_id": "integration", "protocol_version": "1.2"},
+        "payload": {"client_id": "integration", "protocol_version": "1.3"},
     }
 
 

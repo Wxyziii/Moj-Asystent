@@ -40,7 +40,7 @@ class FakeSocket extends EventTarget {
 const health = {
   service: "core",
   status: "ready",
-  protocol_version: "1.2",
+  protocol_version: "1.3",
   assistant_state: "idle",
 };
 const response = () => ({
@@ -52,7 +52,7 @@ const wire = (
   payload: unknown,
   correlation_id: string | null = null,
 ) => ({
-  protocol_version: "1.2",
+  protocol_version: "1.3",
   event_id: crypto.randomUUID(),
   occurred_at: new Date().toISOString(),
   correlation_id,
@@ -273,6 +273,129 @@ it("delivers one validated, ordered local-model stream", async () => {
   expect(content).toHaveBeenCalledTimes(3);
 });
 
+it("delivers a tool lifecycle only within its active operation and call", async () => {
+  const content = vi.fn();
+  stop = connectToCore(vi.fn(), vi.fn(), TOKEN, content);
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = FakeSocket.instances[0];
+  synchronize(socket);
+  const operation = crypto.randomUUID();
+  const call = crypto.randomUUID();
+  socket.frame(
+    wire(
+      "assistant.response.started",
+      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.execution.status",
+      {
+        operation_id: operation,
+        call_id: call,
+        tool_name: "delete_file",
+        status: "requested",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.confirmation.requested",
+      {
+        confirmation_id: "a".repeat(43),
+        operation_id: operation,
+        call_id: call,
+        tool_name: "delete_file",
+        arguments_digest: "b".repeat(64),
+        action: "Usunąć plik?",
+        target: "C:\\Users\\Test\\notes.txt",
+        details: [],
+        risk: "Tej czynności nie można cofnąć.",
+        expires_at: new Date().toISOString(),
+        persistent_allowed: false,
+      },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.result",
+      {
+        operation_id: operation,
+        call_id: call,
+        tool_name: "delete_file",
+        status: "cancelled",
+        message: "Anulowano.",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  expect(content.mock.calls.map(([event]) => event.type)).toEqual([
+    "assistant.response.started",
+    "tool.execution.status",
+    "tool.confirmation.requested",
+    "tool.result",
+  ]);
+});
+
+it("rejects a stale tool result from a completed operation", async () => {
+  const status = vi.fn();
+  stop = connectToCore(status, vi.fn(), TOKEN);
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = FakeSocket.instances[0];
+  synchronize(socket);
+  const operation = crypto.randomUUID();
+  const call = crypto.randomUUID();
+  socket.frame(
+    wire(
+      "assistant.response.started",
+      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.execution.status",
+      {
+        operation_id: operation,
+        call_id: call,
+        tool_name: "read_file",
+        status: "requested",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "assistant.response.completed",
+      {
+        operation_id: operation,
+        text: "Gotowe.",
+        spoken_text: null,
+        kind: "local_model",
+        model: "qwen3.5:4b",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  socket.frame(
+    wire(
+      "tool.result",
+      {
+        operation_id: operation,
+        call_id: call,
+        tool_name: "read_file",
+        status: "success",
+        message: "stary wynik",
+      },
+      socket.hello.event_id,
+    ),
+  );
+  expect(status).toHaveBeenLastCalledWith("disconnected");
+});
+
 it("rejects an out-of-order model stream and reconnects", async () => {
   const status = vi.fn();
   stop = connectToCore(status, vi.fn(), TOKEN);
@@ -317,7 +440,7 @@ it("sends trimmed typed chat with the exact protocol version", async () => {
         Authorization: `Bearer ${TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ protocol_version: "1.2", text: "Cześć" }),
+      body: JSON.stringify({ protocol_version: "1.3", text: "Cześć" }),
     }),
   );
 });
@@ -397,7 +520,7 @@ it("detects a silent core and refreshes the liveness deadline on heartbeat", asy
 it("validates HTTP protocol compatibility before opening a socket", async () => {
   request.mockResolvedValue({
     ok: true,
-    text: async () => JSON.stringify({ ...health, protocol_version: "1.3" }),
+    text: async () => JSON.stringify({ ...health, protocol_version: "1.4" }),
   });
   const status = vi.fn();
   stop = connect(status, vi.fn());

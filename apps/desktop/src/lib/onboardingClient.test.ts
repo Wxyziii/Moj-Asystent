@@ -38,7 +38,7 @@ describe("authenticated wake onboarding client", () => {
     const init = fetch.mock.calls[0][1] as RequestInit;
     expect(init.headers).toMatchObject({ Authorization: "Bearer secret" });
     expect(JSON.parse(String(init.body))).toMatchObject({
-      protocol_version: "1.2",
+      protocol_version: "1.3",
       name: "Żorina",
     });
   });

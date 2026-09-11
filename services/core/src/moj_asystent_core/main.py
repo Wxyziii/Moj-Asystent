@@ -29,11 +29,15 @@ def create_server(settings: CoreSettings) -> uvicorn.Server:
 
 def main() -> None:
     raw_credential = os.environ.get("MOJ_ASYSTENT_SESSION_CREDENTIAL")
+    raw_action_credential = os.environ.get("MOJ_ASYSTENT_ACTION_CREDENTIAL")
     if raw_credential is None:
         raise RuntimeError("Core requires a per-launch session credential")
+    if raw_action_credential is None:
+        raise RuntimeError("Core requires a separate per-launch action credential")
     create_server(
         CoreSettings(
             credential=SessionCredential.from_value(raw_credential),
+            action_credential=SessionCredential.from_value(raw_action_credential),
             audio=AudioConfig.from_environment(),
             audio_enabled=True,
             ollama_url=os.environ.get("MOJ_ASYSTENT_OLLAMA_URL", "http://127.0.0.1:11434"),

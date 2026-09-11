@@ -1,11 +1,10 @@
 import asyncio
-from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
 
 from moj_asystent_core.conversation import LocalConversationService, concise_spoken_response
-from moj_asystent_core.llm import LanguageModelRequest, ModelStatus
+from moj_asystent_core.llm import LanguageModelRequest, ModelStatus, ModelTextDelta
 from moj_asystent_core.runtime import CoreRuntime
 
 
@@ -20,11 +19,11 @@ class FakeLanguageModel:
     async def status(self) -> ModelStatus:
         return ModelStatus(model=self.model, state="ready")
 
-    async def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]:
+    async def stream_turn(self, request: LanguageModelRequest):
         self.requests.append(request)
         for chunk in self.chunks:
             await asyncio.sleep(0)
-            yield chunk
+            yield ModelTextDelta(text=chunk)
 
     async def close(self) -> None:
         self.closed = True
@@ -83,13 +82,13 @@ class CancellableLanguageModel(FakeLanguageModel):
         super().__init__()
         self.release = asyncio.Event()
 
-    async def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]:
+    async def stream_turn(self, request: LanguageModelRequest):
         self.requests.append(request)
         if len(self.requests) == 1:
-            yield "niedokończona część"
+            yield ModelTextDelta(text="niedokończona część")
             await self.release.wait()
         else:
-            yield "Nowa odpowiedź."
+            yield ModelTextDelta(text="Nowa odpowiedź.")
 
 
 @pytest.mark.asyncio

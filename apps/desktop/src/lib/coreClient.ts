@@ -24,7 +24,11 @@ export type CoreContentEvent = Extract<
       | "assistant.response.started"
       | "assistant.response.delta"
       | "assistant.response.completed"
-      | "model.status.changed";
+      | "model.status.changed"
+      | "tool.execution.status"
+      | "tool.confirmation.requested"
+      | "tool.confirmation.resolved"
+      | "tool.result";
   }
 >;
 
@@ -104,6 +108,8 @@ export function connectToCore(
       let previousState: AssistantState | undefined;
       const seen = new Set<string>();
       const responseSequences = new Map<string, number>();
+      const activeToolCalls = new Set<string>();
+      let activeOperation: string | undefined;
       connection.addEventListener("open", () => {
         if (active()) connection.send(JSON.stringify(hello));
       });
@@ -146,17 +152,20 @@ export function connectToCore(
             event.type === "assistant.response.started" ||
             event.type === "assistant.response.delta" ||
             event.type === "assistant.response.completed" ||
-            event.type === "model.status.changed"
+            event.type === "model.status.changed" ||
+            event.type === "tool.execution.status" ||
+            event.type === "tool.confirmation.requested" ||
+            event.type === "tool.confirmation.resolved" ||
+            event.type === "tool.result"
           ) {
             if (phase !== "ready") {
               fail();
               return;
             }
             if (event.type === "assistant.response.started") {
-              if (responseSequences.has(event.payload.operation_id)) {
-                fail();
-                return;
-              }
+              responseSequences.clear();
+              activeToolCalls.clear();
+              activeOperation = event.payload.operation_id;
               responseSequences.set(event.payload.operation_id, -1);
             }
             if (event.type === "assistant.response.delta") {
@@ -164,6 +173,7 @@ export function connectToCore(
                 event.payload.operation_id,
               );
               if (
+                event.payload.operation_id !== activeOperation ||
                 previous === undefined ||
                 event.payload.sequence !== previous + 1
               ) {
@@ -176,9 +186,46 @@ export function connectToCore(
               );
             }
             if (event.type === "assistant.response.completed") {
-              if (!responseSequences.delete(event.payload.operation_id)) {
+              if (
+                event.payload.operation_id !== activeOperation ||
+                !responseSequences.delete(event.payload.operation_id)
+              ) {
                 fail();
                 return;
+              }
+              activeOperation = undefined;
+              activeToolCalls.clear();
+            }
+            if (event.type === "tool.execution.status") {
+              if (event.payload.operation_id !== activeOperation) {
+                fail();
+                return;
+              }
+              if (event.payload.status === "requested") {
+                if (activeToolCalls.has(event.payload.call_id)) {
+                  fail();
+                  return;
+                }
+                activeToolCalls.add(event.payload.call_id);
+              } else if (!activeToolCalls.has(event.payload.call_id)) {
+                fail();
+                return;
+              }
+            }
+            if (
+              event.type === "tool.confirmation.requested" ||
+              event.type === "tool.confirmation.resolved" ||
+              event.type === "tool.result"
+            ) {
+              if (
+                event.payload.operation_id !== activeOperation ||
+                !activeToolCalls.has(event.payload.call_id)
+              ) {
+                fail();
+                return;
+              }
+              if (event.type === "tool.result") {
+                activeToolCalls.delete(event.payload.call_id);
               }
             }
             onContent(event);

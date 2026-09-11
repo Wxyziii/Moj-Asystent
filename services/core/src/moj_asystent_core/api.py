@@ -44,6 +44,11 @@ from .protocol import (
     parse_event,
 )
 from .runtime import CoreRuntime
+from .tools import ToolEngine, build_tool_engine
+from .tools.confirmations import ConfirmationRejected
+from .tools.models import ConfirmationDecision
+from .tools.platform import WindowsToolPlatform
+from .tools.policy import default_policy_path
 from .wakeword import WakeModelMetadata, WakeModelStore, default_wake_root
 from .wakeword_training import OpenWakeWordOnnxTrainer, WakeOnboardingService
 
@@ -60,7 +65,7 @@ ALLOWED_ORIGINS = (
 
 class StrictRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    protocol_version: Literal["1.2"]
+    protocol_version: Literal["1.3"]
 
 
 class BeginOnboardingRequest(StrictRequest):
@@ -109,6 +114,15 @@ class ChatRequest(StrictRequest):
         return normalized
 
 
+class ResolveConfirmationRequest(StrictRequest):
+    confirmation_id: str = Field(pattern=r"^[A-Za-z0-9_-]{32,128}$")
+    operation_id: UUID
+    call_id: UUID
+    tool_name: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    arguments_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    decision: Literal["allow", "cancel", "always_allow"]
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     host: str = "127.0.0.1"
@@ -116,11 +130,15 @@ class CoreSettings:
     handshake_timeout: float = 5.0
     heartbeat_interval: float = 10.0
     credential: SessionCredential = field(default_factory=SessionCredential.generate, repr=False)
+    action_credential: SessionCredential = field(
+        default_factory=SessionCredential.generate, repr=False
+    )
     audio: AudioConfig = field(default_factory=AudioConfig)
     audio_enabled: bool = False
     wake_data_root: Path = field(default_factory=default_wake_root)
     ollama_url: str = DEFAULT_OLLAMA_URL
     llm_model: str = DEFAULT_MODEL
+    permission_policy_path: Path = field(default_factory=default_policy_path)
 
     def __post_init__(self) -> None:
         if not ipaddress.ip_address(self.host).is_loopback:
@@ -129,6 +147,8 @@ class CoreSettings:
             raise ValueError("Core port must be between 1 and 65535")
         if not 0 < self.handshake_timeout <= 60 or not 0 < self.heartbeat_interval <= 10:
             raise ValueError("Core timeouts must be positive and bounded")
+        if self.credential.matches(self.action_credential.reveal()):
+            raise ValueError("Core and action credentials must be distinct")
 
 
 @asynccontextmanager
@@ -148,7 +168,13 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         )
     wake_provider = OpenWakeWordProvider(config.wake_model_path, config.development_wake_model)
     provider: LanguageModelProvider = app.state.language_model_provider
-    conversation = LocalConversationService(runtime, provider)
+    tool_engine: ToolEngine = build_tool_engine(
+        runtime,
+        policy_path=app.state.settings.permission_policy_path,
+        platform=app.state.tool_platform,
+    )
+    app.state.tool_engine = tool_engine
+    conversation = LocalConversationService(runtime, provider, tool_engine=tool_engine)
     chat = TextChatController(runtime, conversation)
     app.state.conversation = conversation
     app.state.chat = chat
@@ -184,6 +210,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         await onboarding.shutdown()
         await chat.shutdown()
         await audio.shutdown()
+        tool_engine.shutdown()
         await conversation.close()
         await runtime.shutdown()
         logger.info("core_stopped")
@@ -192,6 +219,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
 def create_app(
     settings: CoreSettings | None = None,
     language_model_provider: LanguageModelProvider | None = None,
+    tool_platform: WindowsToolPlatform | None = None,
 ) -> FastAPI:
     resolved = settings or CoreSettings()
     app = FastAPI(title="Mój Asystent Core", version=PROTOCOL_VERSION, lifespan=lifecycle)
@@ -199,6 +227,7 @@ def create_app(
     app.state.language_model_provider = language_model_provider or OllamaLanguageModelProvider(
         base_url=resolved.ollama_url, model=resolved.llm_model
     )
+    app.state.tool_platform = tool_platform
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(ALLOWED_ORIGINS),
@@ -215,6 +244,16 @@ def create_app(
             else ""
         )
         if not candidate or not resolved.credential.matches(candidate):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    def authorize_action(authorization: Annotated[str | None, Header()] = None) -> None:
+        prefix = "Bearer "
+        candidate = (
+            authorization[len(prefix) :]
+            if authorization and authorization.startswith(prefix)
+            else ""
+        )
+        if not candidate or not resolved.action_credential.matches(candidate):
             raise HTTPException(status_code=401, detail="Unauthorized")
 
     def onboarding_service() -> WakeOnboardingService:
@@ -264,6 +303,28 @@ def create_app(
     async def cancel_chat(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:
         await app.state.chat.cancel()
         return {"status": "idle"}
+
+    @app.post("/tool-confirmations/resolve")
+    async def resolve_tool_confirmation(
+        request: ResolveConfirmationRequest,
+        _: Annotated[None, Depends(authorize_action)],
+    ) -> dict[str, str]:
+        try:
+            app.state.tool_engine.resolve_confirmation(
+                ConfirmationDecision(
+                    confirmation_id=request.confirmation_id,
+                    operation_id=str(request.operation_id),
+                    call_id=str(request.call_id),
+                    tool_name=request.tool_name,
+                    arguments_digest=request.arguments_digest,
+                    decision=request.decision,
+                )
+            )
+        except ConfirmationRejected as error:
+            raise HTTPException(
+                status_code=409, detail="Confirmation is no longer valid"
+            ) from error
+        return {"status": "resolved"}
 
     @app.get("/audio/devices")
     async def audio_devices(_: Annotated[None, Depends(authorize)]) -> list[dict[str, object]]:

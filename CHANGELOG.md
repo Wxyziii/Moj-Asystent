@@ -6,6 +6,14 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 6 typed tool engine with the exact 18 planned read, safe-action and confirmation-required capabilities; Windows UI-tree/screen tools remain honest Milestone 7 provider seams.
+- Strict Pydantic tool input/output validation, model-facing JSON Schemas, deterministic implementations, bounded execution and structured results returned to Qwen before final responses.
+- User-local fail-closed `read` / `write.safe` / `sensitive` policy plus expiring, single-use confirmations bound to exact operation, call, tool and arguments.
+- Protocol `1.3` tool lifecycle events synchronized across JSON Schema, Python and TypeScript, with stale-operation checks in the desktop client.
+- Polish grayscale confirmation card and a narrow Tauri/Rust confirmation command backed by a separate action credential unavailable to the webview.
+- Filesystem, process, application-launch and volume safety controls, including canonical roots, bounded text reads, no recursive deletion/overwrite, PID/create-time identity and protected-process rejection.
+- Unit, integration, contract and property-based regression coverage for authorization, replay, corruption, paths, numeric ranges, tool loops and safe platform behavior.
+
 - Milestone 5 local AI conversation: replaceable Ollama provider, `qwen3.5:4b` default, Polish-only prompt and bounded in-memory context.
 - Authenticated typed chat and cancellable, ordered Protocol `1.2` response streaming into the desktop overlay.
 - Model lifecycle reporting for unavailable Ollama, missing weights, loading, ready and failed generation states.
@@ -27,6 +35,8 @@ All notable project changes are tracked here.
 - One shared JSON Schema acceptance corpus exercised by JSON Schema, Python and TypeScript validators, plus real Uvicorn restart/shutdown integration tests.
 
 ### Fixed
+
+- Windows process listing now skips non-actionable PID 0 and normalizes empty optional executable metadata instead of failing the entire typed result.
 
 - Wake-name samples no longer fail the silence check solely because the fixed-duration recorder leaves padding after a short spoken name.
 - Training now reconciles accepted samples already stored on disk and returns to the first missing recording instead of asking users to repeat the full curriculum.
@@ -69,6 +79,10 @@ All notable project changes are tracked here.
 - Codex-oriented `AGENTS.md` repository map and source-of-truth documentation structure.
 
 ### Decisions
+
+- Protocol `1.3` is the exact capability set for correlated tool status, confirmations and results; older clients do not implicitly accept it.
+- Model tool calls are untrusted proposals: the registry defines execution, policy decides authorization, and only backend results establish success.
+- Sensitive confirmation authority uses a distinct per-launch credential retained by Tauri; React receives no general privileged bearer token.
 
 - Ollama communication is restricted to an explicit HTTP loopback origin; provider payloads are validated and environment proxies are disabled.
 - Protocol `1.2` is the exact capability set for model status and streamed local responses; `1.1` clients do not implicitly accept it.

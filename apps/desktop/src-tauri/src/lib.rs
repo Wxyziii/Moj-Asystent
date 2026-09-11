@@ -1,5 +1,6 @@
+use serde::Deserialize;
 use std::{
-    io::Write,
+    io::{Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -21,7 +22,19 @@ const SETTINGS_SIZE: (f64, f64) = (680.0, 720.0);
 
 struct CoreSession {
     credential: String,
+    action_credential: String,
     child: Mutex<Option<Child>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmationDecisionInput {
+    confirmation_id: String,
+    operation_id: String,
+    call_id: String,
+    tool_name: String,
+    arguments_digest: String,
+    decision: String,
 }
 
 impl Drop for CoreSession {
@@ -85,6 +98,101 @@ fn get_core_session_credential(session: tauri::State<'_, CoreSession>) -> String
     session.credential.clone()
 }
 
+fn validate_confirmation_decision(decision: &ConfirmationDecisionInput) -> Result<(), String> {
+    let token_valid = (32..=128).contains(&decision.confirmation_id.len())
+        && decision
+            .confirmation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    let mut tool_bytes = decision.tool_name.bytes();
+    let tool_valid = (2..=64).contains(&decision.tool_name.len())
+        && tool_bytes
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+        && tool_bytes
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
+    let digest_valid = decision.arguments_digest.len() == 64
+        && decision
+            .arguments_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    let ids_valid = Uuid::parse_str(&decision.operation_id).is_ok()
+        && Uuid::parse_str(&decision.call_id).is_ok();
+    let choice_valid = matches!(
+        decision.decision.as_str(),
+        "allow" | "always_allow" | "cancel"
+    );
+
+    if token_valid && tool_valid && digest_valid && ids_valid && choice_valid {
+        Ok(())
+    } else {
+        Err("Nieprawidłowa odpowiedź na prośbę o zgodę".to_string())
+    }
+}
+
+fn post_confirmation_decision(
+    action_credential: &str,
+    decision: &ConfirmationDecisionInput,
+) -> Result<(), String> {
+    validate_confirmation_decision(decision)?;
+    let body = serde_json::json!({
+        "protocol_version": "1.3",
+        "confirmation_id": decision.confirmation_id,
+        "operation_id": decision.operation_id,
+        "call_id": decision.call_id,
+        "tool_name": decision.tool_name,
+        "arguments_digest": decision.arguments_digest,
+        "decision": decision.decision,
+    })
+    .to_string();
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8765);
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))
+        .map_err(|_| "Rdzeń asystenta jest niedostępny".to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| "Nie udało się ustawić limitu czasu".to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| "Nie udało się ustawić limitu czasu".to_string())?;
+    let request = format!(
+        "POST /tool-confirmations/resolve HTTP/1.1\r\nHost: 127.0.0.1:8765\r\nAuthorization: Bearer {action_credential}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|_| "Nie udało się wysłać decyzji".to_string())?;
+    stream
+        .flush()
+        .map_err(|_| "Nie udało się wysłać decyzji".to_string())?;
+
+    let mut response = String::new();
+    stream
+        .take(8192)
+        .read_to_string(&mut response)
+        .map_err(|_| "Nie udało się odczytać odpowiedzi rdzenia".to_string())?;
+    let status = response.lines().next().unwrap_or_default();
+    if status.contains(" 200 ") {
+        Ok(())
+    } else if status.contains(" 409 ") {
+        Err("Ta prośba o zgodę wygasła albo została już rozpatrzona".to_string())
+    } else {
+        Err("Rdzeń odrzucił decyzję o zgodzie".to_string())
+    }
+}
+
+#[tauri::command]
+async fn resolve_tool_confirmation(
+    session: tauri::State<'_, CoreSession>,
+    decision: ConfirmationDecisionInput,
+) -> Result<(), String> {
+    let action_credential = session.action_credential.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        post_confirmation_decision(&action_credential, &decision)
+    })
+    .await
+    .map_err(|_| "Nie udało się przekazać decyzji".to_string())?
+}
+
 fn generate_core_credential() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
@@ -110,11 +218,12 @@ fn core_executable() -> Option<PathBuf> {
     development.is_file().then_some(development)
 }
 
-fn start_core(credential: &str) -> Option<Child> {
+fn start_core(credential: &str, action_credential: &str) -> Option<Child> {
     core_executable().and_then(|executable| {
         let mut command = Command::new(executable);
         command
             .env("MOJ_ASYSTENT_SESSION_CREDENTIAL", credential)
+            .env("MOJ_ASYSTENT_ACTION_CREDENTIAL", action_credential)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -173,13 +282,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             hide_overlay,
             set_overlay_mode,
-            get_core_session_credential
+            get_core_session_credential,
+            resolve_tool_confirmation
         ])
         .setup(|app| {
             let credential = generate_core_credential();
-            let child = start_core(&credential);
+            let action_credential = generate_core_credential();
+            let child = start_core(&credential, &action_credential);
             app.manage(CoreSession {
                 credential,
+                action_credential,
                 child: Mutex::new(child),
             });
             let toggle =
@@ -239,7 +351,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::generate_core_credential;
+    use super::{
+        generate_core_credential, validate_confirmation_decision, ConfirmationDecisionInput,
+    };
+    use uuid::Uuid;
 
     #[test]
     fn per_launch_credentials_are_unique_and_url_safe() {
@@ -248,5 +363,21 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.len(), 64);
         assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn confirmation_input_is_narrow_and_strict() {
+        let mut decision = ConfirmationDecisionInput {
+            confirmation_id: "a".repeat(43),
+            operation_id: Uuid::new_v4().to_string(),
+            call_id: Uuid::new_v4().to_string(),
+            tool_name: "file_delete".to_string(),
+            arguments_digest: "a".repeat(64),
+            decision: "allow".to_string(),
+        };
+        assert!(validate_confirmation_decision(&decision).is_ok());
+
+        decision.tool_name = "file_delete\r\nHost: attacker".to_string();
+        assert!(validate_confirmation_decision(&decision).is_err());
     }
 }

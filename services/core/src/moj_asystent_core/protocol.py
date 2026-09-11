@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, field_validator
 
-PROTOCOL_VERSION = "1.2"
+PROTOCOL_VERSION = "1.3"
 AssistantState = Literal[
     "idle",
     "wake_detected",
@@ -46,13 +46,13 @@ class EventPayload(StrictModel):
 
 class ClientHelloPayload(EventPayload):
     client_id: Annotated[str, Field(min_length=1, max_length=128)]
-    protocol_version: Literal["1.2"]
+    protocol_version: Literal["1.3"]
 
 
 class SystemHealthPayload(EventPayload):
     service: Literal["core"]
     status: Literal["ready", "stopping"]
-    protocol_version: Literal["1.2"]
+    protocol_version: Literal["1.3"]
     assistant_state: AssistantState
 
 
@@ -115,13 +115,80 @@ class ModelStatusChangedPayload(EventPayload):
     detail: Annotated[str, Field(min_length=1, max_length=256)] | None
 
 
+class ToolExecutionStatusPayload(EventPayload):
+    operation_id: UUID
+    call_id: UUID
+    tool_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    status: Literal["requested", "confirmation_required", "executing"]
+
+    @field_validator("operation_id", "call_id", mode="before")
+    @classmethod
+    def validate_ids(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
+class ConfirmationDetail(EventPayload):
+    label: Annotated[str, Field(min_length=1, max_length=64)]
+    value: Annotated[str, Field(min_length=1, max_length=1_024)]
+
+
+class ToolConfirmationRequestedPayload(EventPayload):
+    confirmation_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{32,128}$")]
+    operation_id: UUID
+    call_id: UUID
+    tool_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    arguments_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    action: Annotated[str, Field(min_length=1, max_length=256)]
+    target: Annotated[str, Field(min_length=1, max_length=1_024)]
+    details: tuple[ConfirmationDetail, ...] = Field(max_length=12)
+    risk: Annotated[str, Field(min_length=1, max_length=512)]
+    expires_at: datetime
+    persistent_allowed: bool
+
+    @field_validator("operation_id", "call_id", mode="before")
+    @classmethod
+    def validate_operation_id(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+    @field_validator("expires_at", mode="before")
+    @classmethod
+    def validate_expiry(cls, value: object) -> object:
+        return EventBase.validate_timestamp(value)
+
+
+class ToolConfirmationResolvedPayload(EventPayload):
+    confirmation_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{32,128}$")]
+    operation_id: UUID
+    call_id: UUID
+    tool_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    decision: Literal["allow", "cancel", "always_allow"]
+
+    @field_validator("operation_id", "call_id", mode="before")
+    @classmethod
+    def validate_operation_id(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
+class ToolResultPayload(EventPayload):
+    operation_id: UUID
+    call_id: UUID
+    tool_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    status: Literal["success", "failure", "denied", "cancelled", "timeout"]
+    message: Annotated[str, Field(min_length=1, max_length=512)]
+
+    @field_validator("operation_id", "call_id", mode="before")
+    @classmethod
+    def validate_ids(cls, value: object) -> object:
+        return _validate_hyphenated_uuid(value)
+
+
 class SystemErrorPayload(EventPayload):
     code: Literal["invalid_message", "unsupported_protocol", "invalid_origin", "message_too_large"]
     message: Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class EventBase(StrictModel):
-    protocol_version: Literal["1.2"]
+    protocol_version: Literal["1.3"]
     event_id: UUID
     occurred_at: datetime
     correlation_id: UUID | None
@@ -186,6 +253,26 @@ class ModelStatusChanged(EventBase):
     payload: ModelStatusChangedPayload
 
 
+class ToolExecutionStatus(EventBase):
+    type: Literal["tool.execution.status"]
+    payload: ToolExecutionStatusPayload
+
+
+class ToolConfirmationRequested(EventBase):
+    type: Literal["tool.confirmation.requested"]
+    payload: ToolConfirmationRequestedPayload
+
+
+class ToolConfirmationResolved(EventBase):
+    type: Literal["tool.confirmation.resolved"]
+    payload: ToolConfirmationResolvedPayload
+
+
+class ToolResult(EventBase):
+    type: Literal["tool.result"]
+    payload: ToolResultPayload
+
+
 class SystemError(EventBase):
     type: Literal["system.error"]
     payload: SystemErrorPayload
@@ -200,6 +287,10 @@ type ProtocolEvent = (
     | AssistantResponseDelta
     | AssistantResponseCompleted
     | ModelStatusChanged
+    | ToolExecutionStatus
+    | ToolConfirmationRequested
+    | ToolConfirmationResolved
+    | ToolResult
     | SystemError
 )
 _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
@@ -211,6 +302,10 @@ _EVENT_MODELS: dict[str, type[ProtocolEvent]] = {
     "assistant.response.delta": AssistantResponseDelta,
     "assistant.response.completed": AssistantResponseCompleted,
     "model.status.changed": ModelStatusChanged,
+    "tool.execution.status": ToolExecutionStatus,
+    "tool.confirmation.requested": ToolConfirmationRequested,
+    "tool.confirmation.resolved": ToolConfirmationResolved,
+    "tool.result": ToolResult,
     "system.error": SystemError,
 }
 
@@ -221,7 +316,7 @@ def parse_event(value: object) -> ProtocolEvent:
     version = value.get("protocol_version")
     if version != PROTOCOL_VERSION:
         raise ProtocolValidationError(
-            "Unsupported protocol_version; expected 1.2",
+            "Unsupported protocol_version; expected 1.3",
             "unsupported_protocol",
         )
     event_type = value.get("type")
@@ -255,6 +350,10 @@ def new_event(
         "assistant.response.delta",
         "assistant.response.completed",
         "model.status.changed",
+        "tool.execution.status",
+        "tool.confirmation.requested",
+        "tool.confirmation.resolved",
+        "tool.result",
         "system.error",
     ],
     payload: EventPayload,
@@ -268,6 +367,10 @@ def new_event(
     | AssistantResponseDelta
     | AssistantResponseCompleted
     | ModelStatusChanged
+    | ToolExecutionStatus
+    | ToolConfirmationRequested
+    | ToolConfirmationResolved
+    | ToolResult
     | SystemError
 ):
     values = {
@@ -286,6 +389,10 @@ def new_event(
         | AssistantResponseDelta
         | AssistantResponseCompleted
         | ModelStatusChanged
+        | ToolExecutionStatus
+        | ToolConfirmationRequested
+        | ToolConfirmationResolved
+        | ToolResult
         | SystemError,
         parse_event(values),
     )

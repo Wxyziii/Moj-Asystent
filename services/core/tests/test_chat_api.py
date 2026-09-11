@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from moj_asystent_core.api import CoreSettings, create_app
 from moj_asystent_core.auth import SessionCredential
-from moj_asystent_core.llm import LanguageModelRequest, ModelStatus
+from moj_asystent_core.llm import LanguageModelRequest, ModelStatus, ModelTextDelta
 from moj_asystent_core.protocol import PROTOCOL_VERSION
 
 TOKEN = "C" * 43
@@ -20,10 +20,10 @@ class ChatProvider:
     async def status(self) -> ModelStatus:
         return ModelStatus(model=self.model, state="ready")
 
-    async def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]:
+    async def stream_turn(self, request: LanguageModelRequest) -> AsyncIterator[ModelTextDelta]:
         assert request.messages[-1].content == "Jak się masz?"
-        yield "Dobrze, "
-        yield "dziękuję."
+        yield ModelTextDelta(text="Dobrze, ")
+        yield ModelTextDelta(text="dziękuję.")
 
     async def close(self) -> None:
         pass
@@ -100,11 +100,11 @@ class BlockingProvider(ChatProvider):
     def __init__(self) -> None:
         self.cancelled = threading.Event()
 
-    async def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]:
+    async def stream_turn(self, request: LanguageModelRequest) -> AsyncIterator[ModelTextDelta]:
         import asyncio
 
         try:
-            yield "część"
+            yield ModelTextDelta(text="część")
             await asyncio.Event().wait()
         finally:
             self.cancelled.set()

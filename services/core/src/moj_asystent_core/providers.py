@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,6 +11,8 @@ from .llm import (
     LanguageModelProvider,
     LanguageModelRequest,
     ModelStatus,
+    ModelStreamEvent,
+    ModelTextDelta,
     ProviderUnavailableError,
 )
 
@@ -102,9 +105,9 @@ class MockLanguageModelProvider:
     async def status(self) -> ModelStatus:
         return ModelStatus(model="mock", state="unavailable", detail="Mock provider")
 
-    async def stream(self, request: LanguageModelRequest):
+    async def stream_turn(self, request: LanguageModelRequest) -> AsyncIterator[ModelStreamEvent]:
         raise ProviderUnavailableError("Mock LLM provider is intentionally unavailable")
-        yield ""  # pragma: no cover
+        yield ModelTextDelta(text="unreachable")  # pragma: no cover
 
     async def close(self) -> None:
         pass

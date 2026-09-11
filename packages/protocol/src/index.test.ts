@@ -62,6 +62,8 @@ describe("shared protocol acceptance corpus", () => {
       validation: null,
     };
     expect(parseOnboardingSession(value)).toEqual(value);
-    expect(parseOnboardingSession({ ...value, session_id: "../escape" })).toBeNull();
+    expect(
+      parseOnboardingSession({ ...value, session_id: "../escape" }),
+    ).toBeNull();
   });
 });

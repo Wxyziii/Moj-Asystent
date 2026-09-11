@@ -5,18 +5,23 @@ from __future__ import annotations
 import json
 from collections import deque
 from collections.abc import AsyncIterator
-from typing import Literal, Protocol, runtime_checkable
+from typing import Annotated, Literal, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+from uuid import UUID, uuid4
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from .tools.models import JsonValue, ModelToolDefinition
 
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen3.5:4b"
 SYSTEM_PROMPT = (
     "Jesteś lokalnym, prywatnym asystentem użytkownika. Odpowiadaj naturalnie i wyłącznie "
-    "po polsku. Bądź konkretny, przyjazny i uczciwie zaznaczaj niepewność. Nie twierdź, "
-    "że wykonałeś działanie w systemie — na tym etapie możesz tylko rozmawiać."
+    "po polsku. Bądź konkretny, przyjazny i uczciwie zaznaczaj niepewność. Gdy potrzebujesz "
+    "danych lub działania, wybierz wyłącznie udostępnione narzędzie. Wynik narzędzia jest jedynym "
+    "źródłem prawdy o powodzeniu: nigdy nie twierdź, że działanie się udało, zanim nie otrzymasz "
+    "wyniku success. Odmowy, anulowania i błędy przedstawiaj zgodnie z wynikiem."
 )
 
 
@@ -30,13 +35,49 @@ class ProviderWireModel(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
 
+class ModelToolCall(FrozenModel):
+    call_id: UUID
+    name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    arguments: dict[str, JsonValue]
+
+
 class ChatMessage(FrozenModel):
-    role: Literal["system", "user", "assistant"]
-    content: str = Field(min_length=1, max_length=8_192)
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str = Field(max_length=8_192)
+    tool_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")] | None = None
+    tool_calls: tuple[ModelToolCall, ...] = Field(default=(), max_length=8)
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> ChatMessage:
+        if self.role in {"system", "user"}:
+            if not self.content or self.tool_name is not None or self.tool_calls:
+                raise ValueError("System and user messages require only content")
+        elif self.role == "tool":
+            if not self.content or self.tool_name is None or self.tool_calls:
+                raise ValueError("Tool messages require content and tool_name")
+        elif not self.content and not self.tool_calls:
+            raise ValueError("Assistant message requires content or tool calls")
+        elif self.tool_name is not None:
+            raise ValueError("Assistant message cannot contain tool_name")
+        return self
 
 
 class LanguageModelRequest(FrozenModel):
     messages: tuple[ChatMessage, ...] = Field(min_length=1, max_length=25)
+    tools: tuple[ModelToolDefinition, ...] = Field(default=(), max_length=32)
+
+
+class ModelTextDelta(FrozenModel):
+    kind: Literal["text"] = "text"
+    text: Annotated[str, Field(min_length=1, max_length=4_096)]
+
+
+class ModelToolCallDelta(FrozenModel):
+    kind: Literal["tool_call"] = "tool_call"
+    call: ModelToolCall
+
+
+type ModelStreamEvent = ModelTextDelta | ModelToolCallDelta
 
 
 class ModelStatus(FrozenModel):
@@ -61,14 +102,25 @@ class LanguageModelProvider(Protocol):
 
     async def status(self) -> ModelStatus: ...
 
-    def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]: ...
+    def stream_turn(self, request: LanguageModelRequest) -> AsyncIterator[ModelStreamEvent]: ...
 
     async def close(self) -> None: ...
 
 
+class _WireToolFunction(ProviderWireModel):
+    name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    arguments: dict[str, JsonValue]
+
+
+class _WireToolCall(ProviderWireModel):
+    type: Literal["function"] = "function"
+    function: _WireToolFunction
+
+
 class _StreamMessage(ProviderWireModel):
     role: Literal["assistant"] = "assistant"
-    content: str = Field(max_length=8_192)
+    content: str = Field(default="", max_length=8_192)
+    tool_calls: tuple[_WireToolCall, ...] = Field(default=(), max_length=8)
 
 
 class _StreamFrame(ProviderWireModel):
@@ -127,16 +179,19 @@ class OllamaLanguageModelProvider:
                 detail="Nie można połączyć się z lokalnym Ollama.",
             )
 
-    async def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]:
+    async def stream_turn(self, request: LanguageModelRequest) -> AsyncIterator[ModelStreamEvent]:
         payload = {
             "model": self._model,
-            "messages": [message.model_dump() for message in request.messages],
+            "messages": [_message_payload(message) for message in request.messages],
             "stream": True,
             "think": False,
             "options": {"temperature": 0.3},
         }
+        if request.tools:
+            payload["tools"] = [tool.model_dump(mode="json") for tool in request.tools]
         received_done = False
         total_characters = 0
+        total_tool_calls = 0
         try:
             async with self._client.stream(
                 "POST", f"{self._base_url}/api/chat", json=payload
@@ -153,20 +208,46 @@ class OllamaLanguageModelProvider:
                         raise ProviderProtocolError(
                             "Ollama returned an invalid stream frame"
                         ) from error
-                    if frame.done:
-                        received_done = True
-                        break
                     if frame.message.content:
                         total_characters += len(frame.message.content)
                         if total_characters > 8_192:
                             raise ProviderProtocolError("Ollama response is too large")
-                        yield frame.message.content
+                        yield ModelTextDelta(text=frame.message.content)
+                    for wire_call in frame.message.tool_calls:
+                        total_tool_calls += 1
+                        if total_tool_calls > 8:
+                            raise ProviderProtocolError("Ollama returned too many tool calls")
+                        encoded = json.dumps(
+                            wire_call.function.arguments,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        if len(encoded.encode("utf-8")) > 8_192:
+                            raise ProviderProtocolError("Ollama tool arguments are too large")
+                        yield ModelToolCallDelta(
+                            call=ModelToolCall(
+                                call_id=uuid4(),
+                                name=wire_call.function.name,
+                                arguments=wire_call.function.arguments,
+                            )
+                        )
+                    if frame.done:
+                        received_done = True
+                        break
         except httpx.HTTPStatusError as error:
             raise ProviderUnavailableError("Ollama rejected the model request") from error
         except httpx.HTTPError as error:
             raise ProviderUnavailableError("Ollama is unavailable") from error
         if not received_done:
             raise ProviderProtocolError("Ollama stream ended before completion")
+
+    async def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]:
+        """Compatibility helper for callers that intentionally expose no tools."""
+        if request.tools:
+            raise ValueError("Use stream_turn when tools are present")
+        async for event in self.stream_turn(request):
+            if isinstance(event, ModelTextDelta):
+                yield event.text
 
     async def close(self) -> None:
         if self._owns_client:
@@ -220,3 +301,18 @@ def _validate_loopback_origin(value: str) -> str:
     ):
         raise ValueError("Ollama URL must be an HTTP loopback origin with an explicit port")
     return value.rstrip("/")
+
+
+def _message_payload(message: ChatMessage) -> dict[str, object]:
+    payload: dict[str, object] = {"role": message.role, "content": message.content}
+    if message.role == "tool":
+        payload["tool_name"] = message.tool_name
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments},
+            }
+            for call in message.tool_calls
+        ]
+    return payload

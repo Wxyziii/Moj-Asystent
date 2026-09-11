@@ -2,9 +2,9 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Local AI conversation",
-    "status": "Milestone 5 complete — local Polish Qwen chat, streaming overlay responses and concise voice replies",
-    "updated": "2026-09-10"
+    "stage": "Typed tools and permissions",
+    "status": "Milestone 6 complete — validated tools, explicit permissions and secure confirmation flow",
+    "updated": "2026-09-11"
   },
   "principles": [
     "Polish-only V1",
@@ -65,8 +65,8 @@
     {
       "id": 6,
       "name": "Tools & permissions",
-      "status": "planned",
-      "description": "Typed Windows tools, validation and confirmation cards."
+      "status": "done",
+      "description": "Strict 18-tool registry, local policy, deterministic execution and exact single-use confirmation cards."
     },
     {
       "id": 7,
@@ -100,6 +100,17 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "title": "Milestone 6: typed tools and permissions",
+      "items": [
+        "Added the exact 18 planned typed tools with strict inputs, outputs, permission metadata, timeouts and deterministic implementations.",
+        "Connected Ollama structured tool calls to a bounded orchestrator that returns verified results before the final answer.",
+        "Added fail-closed local policy and operation-bound, expiring, single-use confirmation tickets for sensitive actions.",
+        "Added Protocol 1.3 tool events, a Polish confirmation card and a separate Tauri-held action credential.",
+        "Added path, process, application-launch and volume protections with security and property-based regression tests."
+      ]
+    },
     {
       "date": "2026-09-10",
       "title": "Milestone 5: local AI conversation",

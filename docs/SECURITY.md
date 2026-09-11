@@ -56,6 +56,8 @@ Examples:
 
 Requires explicit confirmation unless a narrowly scoped persistent permission is intentionally designed and safe.
 
+In the current implementation, all `sensitive` tools require a new confirmation every time and never permit persistent approval. `write.safe` preferences default to ask and may be set to allow/ask/deny in validated user-local storage.
+
 ## Tool design
 
 Every tool must declare:
@@ -70,6 +72,8 @@ Every tool must declare:
 - whether persistent approval is permitted.
 
 Never expose an unrestricted general-purpose command runner to the default assistant.
+
+The central registry is the only model-facing execution surface. Unknown tools and extra arguments fail closed. Ollama uses structured function calls; natural-language command markers are not parsed. Conversation orchestration is capped at four tool iterations, and only a validated backend result may establish success.
 
 ## Shell access
 
@@ -94,6 +98,21 @@ If developer mode later introduces shell execution:
 - distinguish read/write/delete permissions;
 - destructive operations display exact target(s);
 - avoid recursive delete in early versions.
+
+Milestone 6 limits filesystem tools to canonical paths under configured user roots, rejects symlinks/reparse points, reads at most 256 KiB of UTF-8 non-binary content, refuses overwrite collisions and never recursively deletes directories. These controls reduce traversal risk but do not provide a kernel-level handle-based defense against every same-user TOCTOU race.
+
+The initial default root is the current user's home directory so the feature is usable before a path-selection settings flow exists. This remains broader than the intended mature allowlist and should be narrowed through explicit user-selected roots before adding external/cloud providers. Cancellation is guaranteed while waiting for approval and before dispatch; a blocking native call already past its point of effect may not be interruptible by Python's thread timeout.
+
+## Confirmation boundary
+
+- Tauri holds a separate per-launch action credential that is not exposed to React;
+- the webview can invoke only a typed confirmation-resolution command, not a general privileged proxy;
+- confirmation IDs use cryptographic randomness, expire after 90 seconds and are single-use;
+- operation ID, call ID, tool name and canonical argument digest must all match;
+- cancellation/replacement invalidates pending confirmations;
+- sensitive tools cannot be permanently approved by local policy.
+
+Loopback plus per-launch credentials protects against ordinary browser-origin requests, but does not claim isolation from malware running as the same Windows user.
 
 ## Screen privacy
 

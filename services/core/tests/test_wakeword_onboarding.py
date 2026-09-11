@@ -29,16 +29,16 @@ class FakeTrainer:
         self.fail = fail
         self.wait = wait
 
-    def train(self, directory, curriculum, output, cancellation, progress, seed):
+    def train(self, session_directory, curriculum, output_path, cancellation, progress, seed):
         del curriculum, seed
         progress(40, "Trenuję")
         while self.wait:
             cancellation.raise_if_cancelled()
             time.sleep(0.001)
         if self.fail:
-            (directory / "candidate.partial").write_bytes(b"partial")
+            (session_directory / "candidate.partial").write_bytes(b"partial")
             raise RuntimeError("failed")
-        output.write_bytes(b"valid-onnx")
+        output_path.write_bytes(b"valid-onnx")
 
 
 async def no_runtime_change(_metadata: WakeModelMetadata) -> None:
@@ -129,7 +129,9 @@ def test_store_atomically_activates_only_a_validated_candidate(tmp_path: Path) -
 
     with pytest.raises(ValueError):
         store.activate(WakeModelMetadata.for_test("Nora", candidate, validated=False))
-    assert store.load_active().assistant_name == "Mira"
+    active = store.load_active()
+    assert active is not None
+    assert active.assistant_name == "Mira"
     assert previous.read_bytes() == b"old"
 
     activated = store.activate(
@@ -185,7 +187,9 @@ async def test_failed_training_cleans_output_and_preserves_active_model(tmp_path
 
     assert service.job(job.job_id).status == "failed"
     assert not list((store.sessions / str(session.session_id)).glob("*.partial"))
-    assert store.load_active().assistant_name == "Mira"
+    active = store.load_active()
+    assert active is not None
+    assert active.assistant_name == "Mira"
 
 
 @pytest.mark.asyncio

@@ -7,9 +7,11 @@ from moj_asystent_core.llm import (
     ConversationContext,
     LanguageModelRequest,
     ModelStatus,
+    ModelToolCallDelta,
     OllamaLanguageModelProvider,
     ProviderProtocolError,
 )
+from moj_asystent_core.tools.models import ModelToolDefinition
 
 
 def response(lines: list[dict[str, object]], status: int = 200) -> httpx.Response:
@@ -113,6 +115,59 @@ async def test_ollama_rejects_remote_endpoints_and_malformed_streams() -> None:
                     LanguageModelRequest(messages=({"role": "user", "content": "test"},))
                 )
             ]
+
+
+@pytest.mark.asyncio
+async def test_ollama_uses_structured_tool_calling_and_validates_calls() -> None:
+    seen: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return response(
+            [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "get_system_stats",
+                                    "arguments": {},
+                                },
+                            }
+                        ],
+                    },
+                    "done": True,
+                }
+            ]
+        )
+
+    tool = ModelToolDefinition(
+        function={
+            "name": "get_system_stats",
+            "description": "Statystyki",
+            "parameters": {"type": "object", "additionalProperties": False},
+        }
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OllamaLanguageModelProvider(client=client)
+        events = [
+            event
+            async for event in provider.stream_turn(
+                LanguageModelRequest(
+                    messages=({"role": "user", "content": "Sprawdź komputer"},),
+                    tools=(tool,),
+                )
+            )
+        ]
+
+    assert len(events) == 1
+    assert isinstance(events[0], ModelToolCallDelta)
+    assert events[0].call.name == "get_system_stats"
+    assert seen["tools"] == [tool.model_dump(mode="json")]
+    assert "RUN:" not in json.dumps(seen)
 
 
 def test_context_is_polish_bounded_and_keeps_complete_recent_turns() -> None:

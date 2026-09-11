@@ -101,6 +101,13 @@ validated adapter and answered the Polish language check in Polish. Automated
 tests separately cover desktop stream assembly, cancellation, missing/runtime
 failure states and the authenticated core boundary.
 
+Milestone 6 safe-tool smoke testing on 2026-09-11 exercised real Windows system
+stats, process listing, a temporary directory and 25-byte UTF-8 temporary file,
+allowlisted Calculator launch, and volume set/restore (37% back to the original
+60%). No power action, real-user file deletion, process restart or other
+destructive operation was used. The first run exposed Windows PID 0 and empty
+executable metadata; both are now normalized behind a regression test.
+
 ## Model evaluation
 
 Maintain a small Polish benchmark set covering:

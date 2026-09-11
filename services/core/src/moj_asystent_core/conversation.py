@@ -3,21 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID, uuid4
 
 from .llm import (
+    ChatMessage,
     ConversationContext,
     LanguageModelProvider,
     LanguageModelRequest,
     ModelStatus,
+    ModelTextDelta,
+    ModelToolCallDelta,
     ProviderProtocolError,
     ProviderUnavailableError,
 )
 from .protocol import ModelStatusChangedPayload
 from .runtime import CoreRuntime
+from .tools.engine import ToolEngine
+from .tools.models import JsonValue
+
+MAX_TOOL_ITERATIONS = 4
 
 
 @dataclass(frozen=True)
@@ -32,10 +40,12 @@ class LocalConversationService:
         runtime: CoreRuntime,
         provider: LanguageModelProvider,
         context: ConversationContext | None = None,
+        tool_engine: ToolEngine | None = None,
     ) -> None:
         self._runtime = runtime
         self._provider = provider
         self._context = context or ConversationContext()
+        self._tool_engine = tool_engine
         self._lock = asyncio.Lock()
 
     @property
@@ -58,13 +68,8 @@ class LocalConversationService:
                 ModelStatus(provider="ollama", model=self.model, state="loading", detail=None)
             )
             self._runtime.publish_response_started(operation_id, model=self.model, mode=mode)
-            chunks: list[str] = []
             try:
-                request = LanguageModelRequest(messages=self._context.messages_for(user_text))
-                async for chunk in self._provider.stream(request):
-                    chunks.append(chunk)
-                    self._runtime.publish_response_delta(operation_id, len(chunks) - 1, chunk)
-                answer = "".join(chunks).strip()
+                answer = await self._run_model_loop(operation_id, user_text)
                 if not answer:
                     raise ProviderProtocolError("Local model returned an empty response")
                 spoken = concise_spoken_response(answer)
@@ -80,6 +85,8 @@ class LocalConversationService:
                 )
                 return ConversationReply(text=answer, spoken_text=spoken)
             except asyncio.CancelledError:
+                if self._tool_engine is not None:
+                    self._tool_engine.cancel_operation(operation_id)
                 self._publish_status(
                     ModelStatus(provider="ollama", model=self.model, state="ready", detail=None)
                 )
@@ -94,6 +101,50 @@ class LocalConversationService:
                     )
                 )
                 raise
+
+    async def _run_model_loop(self, operation_id: UUID, user_text: str) -> str:
+        messages = list(self._context.messages_for(user_text))
+        tools = self._tool_engine.registry.model_definitions() if self._tool_engine else ()
+        for iteration in range(MAX_TOOL_ITERATIONS + 1):
+            text_chunks: list[str] = []
+            tool_calls = []
+            request = LanguageModelRequest(messages=tuple(messages), tools=tools)
+            async for event in self._provider.stream_turn(request):
+                if isinstance(event, ModelTextDelta):
+                    text_chunks.append(event.text)
+                elif isinstance(event, ModelToolCallDelta):
+                    tool_calls.append(event.call)
+
+            if not tool_calls:
+                for sequence, chunk in enumerate(text_chunks):
+                    self._runtime.publish_response_delta(operation_id, sequence, chunk)
+                return "".join(text_chunks).strip()
+            if self._tool_engine is None:
+                raise ProviderProtocolError("Model requested a tool without a tool engine")
+            if iteration >= MAX_TOOL_ITERATIONS:
+                raise ProviderProtocolError("Model exceeded the maximum tool-call iteration count")
+
+            messages.append(ChatMessage(role="assistant", content="", tool_calls=tuple(tool_calls)))
+            for call in tool_calls:
+                result = await self._tool_engine.execute(
+                    operation_id=operation_id,
+                    call_id=call.call_id,
+                    tool_name=call.name,
+                    arguments=call.arguments,
+                )
+                safe_result = cast_tool_result(result.model_dump(mode="json"))
+                messages.append(
+                    ChatMessage(
+                        role="tool",
+                        tool_name=call.name,
+                        content=json.dumps(
+                            safe_result,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                    )
+                )
+        raise ProviderProtocolError("Model tool loop did not complete")
 
     async def close(self) -> None:
         await self._provider.close()
@@ -166,3 +217,9 @@ def concise_spoken_response(text: str, maximum: int = 360) -> str:
         return selected
     shortened = selected[: maximum - 1].rsplit(" ", 1)[0].rstrip(" ,;:")
     return f"{shortened}…"
+
+
+def cast_tool_result(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict):
+        raise ProviderProtocolError("Tool result could not be serialized")
+    return value

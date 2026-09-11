@@ -1,7 +1,7 @@
 """Single-event-loop state ownership and bounded, ordered subscriptions."""
 
 import asyncio
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from .protocol import (
@@ -12,13 +12,20 @@ from .protocol import (
     AssistantState,
     AssistantStateChanged,
     AudioTranscriptFinalPayload,
+    ConfirmationDetail,
     ModelStatusChangedPayload,
     ProtocolEvent,
     SystemHealthPayload,
+    ToolConfirmationRequestedPayload,
+    ToolConfirmationResolvedPayload,
+    ToolExecutionStatusPayload,
+    ToolResultPayload,
     new_event,
 )
 from .providers import SpeechToTextResponse
 from .state import AssistantStateMachine
+from .tools.confirmations import ConfirmationRequest
+from .tools.models import ToolExecutionResult
 
 
 class CoreRuntime:
@@ -160,6 +167,79 @@ class CoreRuntime:
     def set_model_status(self, payload: ModelStatusChangedPayload) -> None:
         self._model_status = payload
         self.publish(new_event("model.status.changed", payload))
+
+    def publish_tool_status(
+        self, operation_id: UUID, call_id: UUID, tool_name: str, status: str
+    ) -> None:
+        checked = cast(Literal["requested", "confirmation_required", "executing"], status)
+        self.publish(
+            new_event(
+                "tool.execution.status",
+                ToolExecutionStatusPayload(
+                    operation_id=operation_id,
+                    call_id=call_id,
+                    tool_name=tool_name,
+                    status=checked,
+                ),
+            )
+        )
+
+    def publish_confirmation_requested(self, request: ConfirmationRequest) -> None:
+        self.publish(
+            new_event(
+                "tool.confirmation.requested",
+                ToolConfirmationRequestedPayload(
+                    confirmation_id=request.confirmation_id,
+                    operation_id=request.operation_id,
+                    call_id=request.call_id,
+                    tool_name=request.tool_name,
+                    arguments_digest=request.arguments_digest,
+                    action=request.action,
+                    target=request.target,
+                    details=tuple(
+                        ConfirmationDetail(label=label, value=value)
+                        for label, value in request.details
+                    ),
+                    risk=request.risk,
+                    expires_at=request.expires_at,
+                    persistent_allowed=request.persistent_allowed,
+                ),
+            )
+        )
+
+    def publish_confirmation_resolved(self, request: ConfirmationRequest, decision: str) -> None:
+        checked = cast(Literal["allow", "cancel", "always_allow"], decision)
+        self.publish(
+            new_event(
+                "tool.confirmation.resolved",
+                ToolConfirmationResolvedPayload(
+                    confirmation_id=request.confirmation_id,
+                    operation_id=request.operation_id,
+                    call_id=request.call_id,
+                    tool_name=request.tool_name,
+                    decision=checked,
+                ),
+            )
+        )
+
+    def publish_tool_result(
+        self, operation_id: UUID, call_id: UUID, result: ToolExecutionResult
+    ) -> None:
+        if result.status.value == "confirmation_required":
+            raise ValueError("confirmation_required is not a terminal tool result")
+        status = result.status.value
+        self.publish(
+            new_event(
+                "tool.result",
+                ToolResultPayload(
+                    operation_id=operation_id,
+                    call_id=call_id,
+                    tool_name=result.tool_name,
+                    status=status,
+                    message=result.message,
+                ),
+            )
+        )
 
     async def shutdown(self) -> None:
         self._assert_owner()

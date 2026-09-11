@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = "1.2" as const;
+export const PROTOCOL_VERSION = "1.3" as const;
 
 export const assistantStates = [
   "idle",
@@ -71,6 +71,55 @@ export interface ModelStatusChanged extends EventBase {
     detail: string | null;
   };
 }
+export interface ToolExecutionStatus extends EventBase {
+  type: "tool.execution.status";
+  payload: {
+    operation_id: string;
+    call_id: string;
+    tool_name: string;
+    status: "requested" | "confirmation_required" | "executing";
+  };
+}
+export interface ConfirmationDetail {
+  label: string;
+  value: string;
+}
+export interface ToolConfirmationRequested extends EventBase {
+  type: "tool.confirmation.requested";
+  payload: {
+    confirmation_id: string;
+    operation_id: string;
+    call_id: string;
+    tool_name: string;
+    arguments_digest: string;
+    action: string;
+    target: string;
+    details: ConfirmationDetail[];
+    risk: string;
+    expires_at: string;
+    persistent_allowed: boolean;
+  };
+}
+export interface ToolConfirmationResolved extends EventBase {
+  type: "tool.confirmation.resolved";
+  payload: {
+    confirmation_id: string;
+    operation_id: string;
+    call_id: string;
+    tool_name: string;
+    decision: "allow" | "cancel" | "always_allow";
+  };
+}
+export interface ToolResult extends EventBase {
+  type: "tool.result";
+  payload: {
+    operation_id: string;
+    call_id: string;
+    tool_name: string;
+    status: "success" | "failure" | "denied" | "cancelled" | "timeout";
+    message: string;
+  };
+}
 export interface SystemError extends EventBase {
   type: "system.error";
   payload: {
@@ -91,13 +140,14 @@ export type ProtocolEvent =
   | AssistantResponseDelta
   | AssistantResponseCompleted
   | ModelStatusChanged
+  | ToolExecutionStatus
+  | ToolConfirmationRequested
+  | ToolConfirmationResolved
+  | ToolResult
   | SystemError;
 
 export type RecordingKind =
-  | "positive"
-  | "natural_command"
-  | "hard_negative"
-  | "ordinary_speech";
+  "positive" | "natural_command" | "hard_negative" | "ordinary_speech";
 
 export interface NameAssessment {
   display_name: string;
@@ -199,8 +249,14 @@ export interface WakeModelMetadata {
   keep_training_samples: boolean;
 }
 
-export function parseOnboardingSession(value: unknown): OnboardingSession | null {
-  if (!isRecord(value) || !isUuid(value.session_id) || !Array.isArray(value.curriculum))
+export function parseOnboardingSession(
+  value: unknown,
+): OnboardingSession | null {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.session_id) ||
+    !Array.isArray(value.curriculum)
+  )
     return null;
   if (!isNameAssessment(value.name)) return null;
   const curriculum = value.curriculum.filter(isRecordingStep);
@@ -220,7 +276,9 @@ export function parseTrainingJob(value: unknown): TrainingJob | null {
     !isRecord(value) ||
     !isUuid(value.job_id) ||
     !isUuid(value.session_id) ||
-    !["running", "ready", "failed", "cancelled"].includes(String(value.status)) ||
+    !["running", "ready", "failed", "cancelled"].includes(
+      String(value.status),
+    ) ||
     !Number.isInteger(value.progress) ||
     Number(value.progress) < 0 ||
     Number(value.progress) > 100 ||
@@ -280,12 +338,21 @@ function isRecordingStep(value: unknown): value is RecordingStep {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
-    ["positive", "natural_command", "hard_negative", "ordinary_speech"].includes(
-      String(value.kind),
-    ) &&
-    ["phrase", "loudness", "distance", "intonation", "posture", "guidance", "avoid"].every(
-      (key) => typeof value[key] === "string",
-    ) &&
+    [
+      "positive",
+      "natural_command",
+      "hard_negative",
+      "ordinary_speech",
+    ].includes(String(value.kind)) &&
+    [
+      "phrase",
+      "loudness",
+      "distance",
+      "intonation",
+      "posture",
+      "guidance",
+      "avoid",
+    ].every((key) => typeof value[key] === "string") &&
     Array.isArray(value.expected_seconds) &&
     value.expected_seconds.length === 2 &&
     value.expected_seconds.every((item) => typeof item === "number")
@@ -372,12 +439,7 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         ? (value as unknown as AssistantResponseDelta)
         : null;
     case "model.status.changed":
-      return exactObject(payload, [
-        "provider",
-        "model",
-        "status",
-        "detail",
-      ]) &&
+      return exactObject(payload, ["provider", "model", "status", "detail"]) &&
         payload.provider === "ollama" &&
         boundedString(payload.model, 1, 128) &&
         modelStatuses.includes(
@@ -385,6 +447,85 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         ) &&
         (payload.detail === null || boundedString(payload.detail, 1, 256))
         ? (value as unknown as ModelStatusChanged)
+        : null;
+    case "tool.execution.status":
+      return exactObject(payload, [
+        "operation_id",
+        "call_id",
+        "tool_name",
+        "status",
+      ]) &&
+        isUuid(payload.operation_id) &&
+        isUuid(payload.call_id) &&
+        isToolName(payload.tool_name) &&
+        ["requested", "confirmation_required", "executing"].includes(
+          String(payload.status),
+        )
+        ? (value as unknown as ToolExecutionStatus)
+        : null;
+    case "tool.confirmation.requested":
+      return exactObject(payload, [
+        "confirmation_id",
+        "operation_id",
+        "call_id",
+        "tool_name",
+        "arguments_digest",
+        "action",
+        "target",
+        "details",
+        "risk",
+        "expires_at",
+        "persistent_allowed",
+      ]) &&
+        typeof payload.confirmation_id === "string" &&
+        confirmationPattern.test(payload.confirmation_id) &&
+        isUuid(payload.operation_id) &&
+        isUuid(payload.call_id) &&
+        isToolName(payload.tool_name) &&
+        typeof payload.arguments_digest === "string" &&
+        digestPattern.test(payload.arguments_digest) &&
+        boundedString(payload.action, 1, 256) &&
+        boundedString(payload.target, 1, 1_024) &&
+        Array.isArray(payload.details) &&
+        payload.details.length <= 12 &&
+        payload.details.every(isConfirmationDetail) &&
+        boundedString(payload.risk, 1, 512) &&
+        isUtcTimestamp(payload.expires_at) &&
+        typeof payload.persistent_allowed === "boolean"
+        ? (value as unknown as ToolConfirmationRequested)
+        : null;
+    case "tool.confirmation.resolved":
+      return exactObject(payload, [
+        "confirmation_id",
+        "operation_id",
+        "call_id",
+        "tool_name",
+        "decision",
+      ]) &&
+        typeof payload.confirmation_id === "string" &&
+        confirmationPattern.test(payload.confirmation_id) &&
+        isUuid(payload.operation_id) &&
+        isUuid(payload.call_id) &&
+        isToolName(payload.tool_name) &&
+        ["allow", "cancel", "always_allow"].includes(String(payload.decision))
+        ? (value as unknown as ToolConfirmationResolved)
+        : null;
+    case "tool.result":
+      return exactObject(payload, [
+        "operation_id",
+        "call_id",
+        "tool_name",
+        "status",
+        "message",
+      ]) &&
+        isUuid(payload.operation_id) &&
+        isUuid(payload.call_id) &&
+        isToolName(payload.tool_name) &&
+        ["success", "failure", "denied", "cancelled", "timeout"].includes(
+          String(payload.status),
+        ) &&
+        boundedString(payload.message, 1, 512)
+        ? (value as unknown as ToolResult)
         : null;
     case "system.error":
       return exactObject(payload, ["code", "message"]) &&
@@ -429,6 +570,9 @@ const modelStatuses = [
   "ready",
   "error",
 ] as const;
+const confirmationPattern = /^[A-Za-z0-9_-]{32,128}$/;
+const digestPattern = /^[0-9a-f]{64}$/;
+const toolNamePattern = /^[a-z][a-z0-9_]{1,63}$/;
 
 function exactObject(
   value: unknown,
@@ -450,11 +594,27 @@ function isAssistantState(value: unknown): value is AssistantState {
   );
 }
 
+function isToolName(value: unknown): value is string {
+  return typeof value === "string" && toolNamePattern.test(value);
+}
+
+function isConfirmationDetail(value: unknown): value is ConfirmationDetail {
+  return (
+    exactObject(value, ["label", "value"]) &&
+    boundedString(value.label, 1, 64) &&
+    boundedString(value.value, 1, 1_024)
+  );
+}
+
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && uuidPattern.test(value);
 }
 
-function boundedString(value: unknown, minimum: number, maximum: number): value is string {
+function boundedString(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is string {
   if (typeof value !== "string") return false;
   const length = codePointLength(value);
   return length >= minimum && length <= maximum;
@@ -480,9 +640,7 @@ function isUtcTimestamp(value: unknown): value is string {
   );
 }
 
-function isEnvelope(
-  value: unknown,
-): value is Record<string, unknown> & {
+function isEnvelope(value: unknown): value is Record<string, unknown> & {
   type: string;
   payload: Record<string, unknown>;
 } {
@@ -498,8 +656,7 @@ function isEnvelope(
     value.protocol_version === PROTOCOL_VERSION &&
     isUuid(value.event_id) &&
     isUtcTimestamp(value.occurred_at) &&
-    (value.correlation_id === null ||
-      isUuid(value.correlation_id)) &&
+    (value.correlation_id === null || isUuid(value.correlation_id)) &&
     typeof value.type === "string" &&
     typeof value.payload === "object" &&
     value.payload !== null &&

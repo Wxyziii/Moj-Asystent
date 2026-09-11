@@ -7,8 +7,15 @@ import {
   type CoreConnectionStatus,
   type CoreContentEvent,
 } from "../lib/coreClient";
-import type { ModelStatusChanged } from "@moj-asystent/protocol";
-import { getCoreSessionCredential } from "../lib/desktop";
+import type {
+  ModelStatusChanged,
+  ToolConfirmationRequested,
+} from "@moj-asystent/protocol";
+import {
+  getCoreSessionCredential,
+  resolveToolConfirmation,
+  type ToolConfirmationDecision,
+} from "../lib/desktop";
 
 export interface ConversationMessage {
   id: string;
@@ -28,6 +35,11 @@ export function useAssistantUi() {
   const [credential, setCredential] = useState<string>();
   const [modelStatus, setModelStatus] =
     useState<ModelStatusChanged["payload"]>();
+  const [pendingConfirmation, setPendingConfirmation] =
+    useState<ToolConfirmationRequested["payload"]>();
+  const [confirmationBusy, setConfirmationBusy] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string>();
+  const [toolActivity, setToolActivity] = useState<string>();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
     const savedMode = window.localStorage.getItem("moj-asystent.overlay-mode");
     return savedMode === "expanded" || savedMode === "settings"
@@ -47,7 +59,44 @@ export function useAssistantUi() {
         setModelStatus(event.payload);
         return;
       }
+      if (event.type === "tool.execution.status") {
+        setToolActivity(
+          event.payload.status === "executing"
+            ? `Wykonuję: ${event.payload.tool_name}`
+            : event.payload.status === "confirmation_required"
+              ? "Czekam na Twoją zgodę"
+              : `Sprawdzam: ${event.payload.tool_name}`,
+        );
+        return;
+      }
+      if (event.type === "tool.confirmation.requested") {
+        setPendingConfirmation(event.payload);
+        setConfirmationBusy(false);
+        setConfirmationError(undefined);
+        return;
+      }
+      if (event.type === "tool.confirmation.resolved") {
+        setPendingConfirmation((current) =>
+          current?.confirmation_id === event.payload.confirmation_id
+            ? undefined
+            : current,
+        );
+        setConfirmationBusy(false);
+        setConfirmationError(undefined);
+        return;
+      }
+      if (event.type === "tool.result") {
+        setToolActivity(event.payload.message);
+        setPendingConfirmation((current) =>
+          current?.call_id === event.payload.call_id ? undefined : current,
+        );
+        setConfirmationBusy(false);
+        return;
+      }
       if (event.type === "assistant.response.started") {
+        setPendingConfirmation(undefined);
+        setConfirmationError(undefined);
+        setToolActivity(undefined);
         setMessages((current) =>
           [
             ...current.filter(
@@ -95,7 +144,13 @@ export function useAssistantUi() {
         if (disposed) return;
         setCredential(token);
         stop = connectToCore(
-          setCoreStatus,
+          (status) => {
+            setCoreStatus(status);
+            if (status !== "connected") {
+              setPendingConfirmation(undefined);
+              setConfirmationBusy(false);
+            }
+          },
           (state) => {
             setStateSource("core");
             setAssistantState(state);
@@ -167,6 +222,27 @@ export function useAssistantUi() {
     [coreStatus, credential],
   );
 
+  const decideConfirmation = useCallback(
+    async (decision: ToolConfirmationDecision) => {
+      if (!pendingConfirmation || confirmationBusy) return false;
+      setConfirmationBusy(true);
+      setConfirmationError(undefined);
+      try {
+        await resolveToolConfirmation(pendingConfirmation, decision);
+        return true;
+      } catch (error) {
+        setConfirmationBusy(false);
+        setConfirmationError(
+          error instanceof Error
+            ? error.message
+            : "Nie udało się przekazać decyzji.",
+        );
+        return false;
+      }
+    },
+    [confirmationBusy, pendingConfirmation],
+  );
+
   return {
     assistantState,
     coreStatus,
@@ -179,5 +255,10 @@ export function useAssistantUi() {
     sendMessage,
     modelStatus,
     credential,
+    pendingConfirmation,
+    confirmationBusy,
+    confirmationError,
+    toolActivity,
+    decideConfirmation,
   };
 }

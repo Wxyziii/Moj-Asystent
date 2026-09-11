@@ -4,7 +4,7 @@
 
 Decision: desktop and core exchange explicit protocol-v1 envelopes over a localhost-only HTTP/WebSocket boundary. Every event contains a protocol version, event ID, UTC timestamp and nullable correlation ID. Unknown event types, extra fields and incompatible versions are rejected before they reach assistant state handling.
 
-Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.1` client therefore rejects `1.2`. Protocol `1.2` is the current exact capability set and adds authenticated model-status and streamed local-response events to the `1.1` voice events. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.2`. Any breaking schema or behavior change requires a new major version.
+Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.2` client therefore rejects `1.3`. Protocol `1.3` is the current exact capability set and adds correlated tool status, confirmation and result events to the `1.2` local-model events. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.3`. Any breaking schema or behavior change requires a new major version.
 
 Connection rule: the desktop proves liveness through a bounded health check and a correlated WebSocket handshake, then reconnects with exponential backoff capped at 30 seconds. The core owns the authoritative state on one event loop and correlates every outbound event to that session's hello event. Event IDs are unique within a stream and duplicate IDs are rejected; events from superseded desktop connection attempts are ignored.
 
@@ -28,9 +28,17 @@ UI, future memory and future tool authorization as separate responsibilities.
 
 ## 2026-09-10 — Per-launch local core credential
 
-Decision: Tauri creates a fresh high-entropy credential for each desktop launch, passes it only to the child core process environment and exposes it only to the trusted application webview. HTTP uses an exact bearer token and WebSocket setup uses a credential subprotocol; both fail closed before sensitive voice events are accepted. The credential is never persisted or logged, and the owned core process is terminated with the desktop session.
+Decision: Tauri creates two distinct high-entropy credentials for each desktop launch and passes both only to the child core process environment. The ordinary session credential is exposed to the trusted application webview for health, chat, audio and WebSocket traffic. The action credential remains in Rust and can be used only by a narrow, typed confirmation command; it is never exposed to React. Credentials are never persisted or logged, and the owned core process is terminated with the desktop session.
 
 Reason: loopback binding prevents remote access but does not by itself distinguish the desktop from unrelated local web pages or processes. This is a narrow application-session boundary, not an account system or a claim of isolation from malicious software already running as the same OS user.
+
+## 2026-09-11 — Deterministic tool authorization boundary
+
+Decision: model tool calls are untrusted proposals. Only names registered in the central tool registry can reach deterministic implementations, and only after strict argument validation and permission evaluation. `read` tools run automatically, `write.safe` follows a validated user-local policy that defaults to asking, and `sensitive` always requires a fresh confirmation. Persistent approval is never available to sensitive tools.
+
+Confirmation tickets are unpredictable, expire after 90 seconds, are single-use and bind the operation ID, call ID, tool name and canonical argument digest. Replacing or cancelling an operation invalidates its pending tickets. Tool results—not model text—are the sole authoritative record of execution success.
+
+Reason: this preserves the rule that AI chooses what to propose, deterministic code controls how it is performed, and policy/user confirmation decides whether it may execute. It also prevents a compromised or malformed model response from manufacturing authorization or success.
 
 This file records product/architecture decisions that should not be silently changed.
 

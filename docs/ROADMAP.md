@@ -138,7 +138,7 @@ Completed scope:
 
 ## Milestone 6 — Tool/permission engine
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
@@ -147,6 +147,17 @@ Deliverables:
 - read/write.safe/sensitive permissions;
 - confirmation UI;
 - action results/audit events.
+
+Completed scope:
+
+- central 18-tool registry with strict Pydantic input/output contracts, bounded timeouts, cancellation metadata and audit categories;
+- Ollama structured function calling with a four-iteration ceiling and verified tool results returned to the model before its final answer;
+- local `read` / `write.safe` / `sensitive` policy with fail-closed storage and confirmation required every time for destructive tools;
+- single-use, short-lived confirmations bound to the operation, call, tool and canonical argument digest;
+- separate Tauri-held action credential and a narrow Rust confirmation command, so React never receives privileged action authorization;
+- canonical user-root file controls, bounded UTF-8 reads, no recursive deletion/overwrite, allowlisted application launch and PID/create-time process identity checks;
+- synchronized Protocol `1.3` tool lifecycle events and a Polish grayscale confirmation card;
+- typed Milestone 7 seams for UI-tree/screen inspection that report unavailable rather than fabricating context.
 
 ## Milestone 7 — Screen/Windows context
 

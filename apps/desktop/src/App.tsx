@@ -28,6 +28,11 @@ export default function App() {
     sendMessage,
     modelStatus,
     credential,
+    pendingConfirmation,
+    confirmationBusy,
+    confirmationError,
+    toolActivity,
+    decideConfirmation,
   } = useAssistantUi();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [assistantName, setAssistantName] = useState<string>();
@@ -121,6 +126,11 @@ export default function App() {
         onToggleListening={() => void toggleListening()}
         onSendMessage={sendMessage}
         modelStatus={modelStatus}
+        pendingConfirmation={pendingConfirmation}
+        confirmationBusy={confirmationBusy}
+        confirmationError={confirmationError}
+        toolActivity={toolActivity}
+        onConfirmationDecision={(decision) => void decideConfirmation(decision)}
       />
     );
   return (

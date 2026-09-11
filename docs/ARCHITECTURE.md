@@ -181,6 +181,14 @@ async def set_application_volume(application: str, volume: int) -> ToolResult:
 
 Do not make `run_any_shell_command` a normal tool.
 
+The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation and call IDs under Protocol `1.3`.
+
+`read_ui_tree` and `inspect_screen` currently expose typed provider seams but return an honest unavailable result. Their Windows context implementations remain Milestone 7.
+
+The Milestone 6 implementation exposes exactly the plan's 18 stable tools through one registry. Pydantic schemas reject unknown fields before policy evaluation. The conversation orchestrator owns the bounded model → tool → result loop; provider adapters only transport Ollama's structured function calls, and React never executes tools. Tool status/result events are correlated by operation and call IDs under Protocol `1.3`.
+
+`read_ui_tree` and `inspect_screen` currently expose typed provider seams but report unavailable. Their Windows context implementations remain Milestone 7.
+
 ### 8. Permission engine
 
 Authorization occurs after intent/tool selection and before execution.
@@ -192,6 +200,10 @@ Permission classes:
 - `sensitive`
 
 Policy can include per-tool, per-app, per-path and one-time approvals.
+
+The initial persisted policy is deliberately smaller: validated per-tool preferences for `write.safe`, stored under the current user's local application-data directory. Corrupt policy fails closed. Sensitive tools ignore stored allow preferences and require an expiring, single-use ticket bound to the exact normalized request. A separate action credential retained in Tauri authorizes only confirmation resolution; the webview retains the ordinary session credential but cannot directly authorize actions.
+
+The initial persisted policy is deliberately smaller: validated per-tool preferences for `write.safe`, stored under the current user's local application-data directory. Corrupt policy fails closed. Sensitive tools ignore stored allow preferences and require an expiring, single-use ticket bound to the exact normalized request. A separate action credential retained in Tauri authorizes only confirmation resolution; the webview retains the ordinary session credential but cannot directly authorize actions.
 
 ### 9. Watcher engine
 
