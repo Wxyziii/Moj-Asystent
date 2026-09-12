@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from base64 import b64encode
 from collections import deque
 from collections.abc import AsyncIterator
@@ -11,7 +12,7 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, model_validator
 
 from .tools.models import JsonValue, ModelToolDefinition
 from .vision import VisionCaptureInvalid, VisionImage
@@ -101,11 +102,28 @@ class ModelToolCallDelta(FrozenModel):
     call: ModelToolCall
 
 
-type ModelStreamEvent = ModelTextDelta | ModelToolCallDelta
+class ModelUsageEvent(FrozenModel):
+    kind: Literal["usage"] = "usage"
+    input_tokens: StrictInt = Field(ge=0, le=10_000_000)
+    output_tokens: StrictInt = Field(ge=0, le=10_000_000)
+    total_tokens: StrictInt = Field(ge=0, le=20_000_000)
+    provider_cost: float | None = Field(default=None, ge=0, le=1_000_000)
+    cost_unit: Literal["openrouter_credits"] | None = None
+
+    @model_validator(mode="after")
+    def validate_usage(self) -> ModelUsageEvent:
+        if self.total_tokens != self.input_tokens + self.output_tokens:
+            raise ValueError("Token total does not match input and output counts")
+        if (self.provider_cost is None) != (self.cost_unit is None):
+            raise ValueError("Provider cost and unit must be supplied together")
+        return self
+
+
+type ModelStreamEvent = ModelTextDelta | ModelToolCallDelta | ModelUsageEvent
 
 
 class ModelStatus(FrozenModel):
-    provider: Literal["ollama"] = "ollama"
+    provider: Literal["ollama", "llama_cpp", "openrouter"] = "ollama"
     model: str = Field(min_length=1, max_length=128)
     state: Literal["unavailable", "missing", "loading", "ready", "error"]
     detail: str | None = Field(default=None, max_length=256)
@@ -150,6 +168,8 @@ class _StreamMessage(ProviderWireModel):
 class _StreamFrame(ProviderWireModel):
     message: _StreamMessage
     done: bool
+    prompt_eval_count: StrictInt | None = Field(default=None, ge=0, le=10_000_000)
+    eval_count: StrictInt | None = Field(default=None, ge=0, le=10_000_000)
 
 
 class _TagsResponse(ProviderWireModel):
@@ -164,12 +184,16 @@ class OllamaLanguageModelProvider:
         *,
         base_url: str = DEFAULT_OLLAMA_URL,
         model: str = DEFAULT_MODEL,
+        keep_alive: str = "5m",
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = _validate_loopback_origin(base_url)
         if not model or len(model) > 128:
             raise ValueError("Model name must contain between 1 and 128 characters")
         self._model = model
+        if not re.fullmatch(r"[1-9][0-9]{0,2}[ms]", keep_alive):
+            raise ValueError("Ollama keep-alive must be a bounded minute/second duration")
+        self._keep_alive = keep_alive
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(connect=2.0, read=120.0, write=10.0, pool=2.0),
@@ -213,6 +237,7 @@ class OllamaLanguageModelProvider:
             "messages": messages,
             "stream": True,
             "think": False,
+            "keep_alive": self._keep_alive,
             "options": {"temperature": 0.3},
         }
         if request.tools:
@@ -260,6 +285,14 @@ class OllamaLanguageModelProvider:
                             )
                         )
                     if frame.done:
+                        if frame.prompt_eval_count is not None or frame.eval_count is not None:
+                            input_tokens = frame.prompt_eval_count or 0
+                            output_tokens = frame.eval_count or 0
+                            yield ModelUsageEvent(
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                total_tokens=input_tokens + output_tokens,
+                            )
                         received_done = True
                         break
         except httpx.HTTPStatusError as error:
@@ -280,6 +313,18 @@ class OllamaLanguageModelProvider:
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+    async def unload(self) -> None:
+        """Ask Ollama to release this model without deleting installed weights."""
+        try:
+            response = await self._client.post(
+                f"{self._base_url}/api/generate",
+                json={"model": self._model, "prompt": "", "stream": False, "keep_alive": 0},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            # Unload is best effort; provider readiness remains independently observable.
+            return
 
 
 class ConversationContext:
@@ -313,6 +358,9 @@ class ConversationContext:
             used += turn_size
         history = tuple(message for turn in selected for message in turn)
         return (ChatMessage(role="system", content=SYSTEM_PROMPT), *history, pending)
+
+    def character_count(self) -> int:
+        return sum(len(message.content) for turn in self._turns for message in turn)
 
 
 def _validate_loopback_origin(value: str) -> str:

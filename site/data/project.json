@@ -2,9 +2,9 @@
   "project": {
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
-    "stage": "Proactive watchers",
-    "status": "Milestone 11 complete — deterministic local watchers",
-    "updated": "2026-09-11"
+    "stage": "V1 release-gate validation",
+    "status": "Milestone 12 complete — manual V1 validation pending",
+    "updated": "2026-09-12"
   },
   "principles": [
     "Polish-only V1",
@@ -101,11 +101,21 @@
     {
       "id": 12,
       "name": "Deep model routing",
-      "status": "planned",
-      "description": "Quality tier and optional CPU/GPU hybrid reasoning."
+      "status": "done",
+      "description": "Hardware-aware Fast/Quality/Deep routing, optional hybrid llama.cpp and explicit cloud opt-in."
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-12",
+      "title": "Milestone 12: hardware-aware model routing",
+      "items": [
+        "Added persistent Private, Fast, Quality, Deep and Auto modes with deterministic one-request Polish escalation.",
+        "Added local Qwen3.5 4B/9B Ollama tiers, configurable experimental 27B GGUF llama.cpp routing and bounded model residency.",
+        "Added explicit local-only/cloud-allowed policy with an optional fixed-origin OpenRouter text provider and strict context exclusions.",
+        "Added Protocol 1.4 route metadata and Polish AI settings; full target-hardware V1 release-gate validation remains pending."
+      ]
+    },
     {
       "date": "2026-09-11",
       "title": "Milestone 11: deterministic proactive watchers",

@@ -42,10 +42,17 @@ origin through `MOJ_ASYSTENT_OLLAMA_URL` and select a compatible model with
 `MOJ_ASYSTENT_LLM_MODEL`. Conversation context is bounded and memory-only.
 
 Milestone 6 adds the central typed tool registry, local permission policy,
-structured Ollama tool calling and Protocol 1.3 tool lifecycle events. Read
+structured Ollama tool calling and Protocol 1.4 tool lifecycle events. Read
 tools run automatically, `write.safe` defaults to asking, and sensitive tools
 always require an exact short-lived confirmation. File access defaults to the
-user's home directory.
+user’s home directory.
+
+Milestone 12 adds deterministic hardware-aware routing across Fast
+`qwen3.5:4b`, optional Quality `qwen3.5:9b`, configurable llama.cpp Deep GGUF
+and an optional explicitly enabled OpenRouter text provider. The default remains
+local-only. Configure the optional paths/model ID through the documented
+`MOJ_ASYSTENT_LLAMA_CPP_*` and `MOJ_ASYSTENT_OPENROUTER_*` environment values;
+model weights are never downloaded silently.
 
 Milestone 7 implements request-scoped active-window metadata, bounded Windows UI
 Automation traversal and selected/focused text where the accessibility provider

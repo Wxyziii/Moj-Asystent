@@ -115,7 +115,29 @@ async def test_ollama_streams_validated_text_and_forces_local_polish_chat() -> N
         ],
         "stream": True,
         "think": False,
+        "keep_alive": "5m",
         "options": {"temperature": 0.3},
+    }
+
+
+@pytest.mark.asyncio
+async def test_ollama_unload_is_explicit_and_never_downloads() -> None:
+    seen: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/generate"
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"done": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OllamaLanguageModelProvider(client=client)
+        await provider.unload()
+
+    assert seen == {
+        "model": "qwen3.5:4b",
+        "prompt": "",
+        "stream": False,
+        "keep_alive": 0,
     }
 
 

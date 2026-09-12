@@ -75,6 +75,10 @@ def test_typed_chat_streams_a_local_model_response_over_websocket() -> None:
         "spoken_text": None,
         "kind": "local_model",
         "model": "qwen3.5:4b",
+        "provider": "ollama",
+        "tier": "fast",
+        "location": "local",
+        "fallback_reason": None,
     }
 
 

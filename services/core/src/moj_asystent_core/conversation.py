@@ -19,9 +19,16 @@ from .llm import (
     ModelToolCall,
     ModelToolCallDelta,
     ProviderProtocolError,
-    ProviderUnavailableError,
 )
 from .memory import MemoryContextItem, MemoryStoreError, SQLiteMemoryStore
+from .model_routing import (
+    ModelCandidate,
+    ModelRouter,
+    RoutingRequest,
+    SelectedModel,
+    contains_sensitive_text,
+    explicit_tier_override,
+)
 from .protocol import ModelStatusChangedPayload
 from .runtime import CoreRuntime
 from .tools.engine import ToolEngine
@@ -41,13 +48,15 @@ class LocalConversationService:
     def __init__(
         self,
         runtime: CoreRuntime,
-        provider: LanguageModelProvider,
+        provider: LanguageModelProvider | ModelRouter,
         context: ConversationContext | None = None,
         tool_engine: ToolEngine | None = None,
         memory_store: SQLiteMemoryStore | None = None,
     ) -> None:
         self._runtime = runtime
-        self._provider = provider
+        self._router = (
+            provider if isinstance(provider, ModelRouter) else ModelRouter.from_provider(provider)
+        )
         self._context = context or ConversationContext()
         self._tool_engine = tool_engine
         self._memory_store = memory_store
@@ -56,11 +65,11 @@ class LocalConversationService:
 
     @property
     def model(self) -> str:
-        return self._provider.model
+        return self._router.model
 
     async def refresh_status(self) -> ModelStatus:
-        status = await self._provider.status()
-        self._publish_status(status)
+        candidate, status = await self._router.primary_status()
+        self._publish_status(status, candidate)
         return status
 
     async def respond(
@@ -72,15 +81,46 @@ class LocalConversationService:
         visual: VisionCaptureOutcome | None = None,
     ) -> ConversationReply:
         async with self._lock:
-            status = await self.refresh_status()
-            if status.state != "ready":
-                raise ProviderUnavailableError(status.detail or "Local model is unavailable")
-            self._publish_status(
-                ModelStatus(provider="ollama", model=self.model, state="loading", detail=None)
+            requires_image = bool(
+                visual is not None and visual.image is not None
+            ) or _requires_visual_capture(user_text)
+            requires_tools = _requires_tool_capability(user_text) or requires_image
+            bounded_context = self._context.messages_for(user_text)
+            sensitive_context = requires_image or any(
+                message.role != "system" and contains_sensitive_text(message.content)
+                for message in bounded_context
             )
-            self._runtime.publish_response_started(operation_id, model=self.model, mode=mode)
+            route = await self._router.select(
+                RoutingRequest(
+                    user_text=user_text,
+                    explicit_tier=explicit_tier_override(user_text),
+                    context_characters=self._context.character_count(),
+                    requires_image=requires_image,
+                    requires_tools=requires_tools,
+                    sensitive_context=sensitive_context,
+                )
+            )
+            self._publish_status(route.status, route.candidate)
+            self._publish_status(
+                ModelStatus(
+                    provider=route.provider_name,
+                    model=route.model,
+                    state="loading",
+                    detail=route.fallback_reason,
+                ),
+                route.candidate,
+            )
+            self._runtime.publish_response_started(
+                operation_id,
+                model=route.model,
+                mode=mode,
+                provider=route.provider_name,
+                tier=route.selected_tier,
+                location="local" if route.local else "cloud",
+                fallback_reason=route.fallback_reason,
+            )
             try:
-                answer = await self._run_model_loop(operation_id, user_text, visual)
+                answer = await self._run_model_loop(operation_id, user_text, visual, route)
                 if not answer:
                     raise ProviderProtocolError("Local model returned an empty response")
                 spoken = concise_spoken_response(answer)
@@ -90,27 +130,44 @@ class LocalConversationService:
                     operation_id,
                     answer,
                     spoken_text=spoken if mode == "voice" else None,
-                    model=self.model,
+                    model=route.model,
+                    provider=route.provider_name,
+                    tier=route.selected_tier,
+                    location="local" if route.local else "cloud",
+                    fallback_reason=route.fallback_reason,
                 )
                 self._publish_status(
-                    ModelStatus(provider="ollama", model=self.model, state="ready", detail=None)
+                    ModelStatus(
+                        provider=route.provider_name,
+                        model=route.model,
+                        state="ready",
+                        detail=route.fallback_reason,
+                    ),
+                    route.candidate,
                 )
                 return ConversationReply(text=answer, spoken_text=spoken)
             except asyncio.CancelledError:
                 if self._tool_engine is not None:
                     self._tool_engine.cancel_operation(operation_id)
                 self._publish_status(
-                    ModelStatus(provider="ollama", model=self.model, state="ready", detail=None)
+                    ModelStatus(
+                        provider=route.provider_name,
+                        model=route.model,
+                        state="ready",
+                        detail=route.fallback_reason,
+                    ),
+                    route.candidate,
                 )
                 raise
             except Exception:
                 self._publish_status(
                     ModelStatus(
-                        provider="ollama",
-                        model=self.model,
+                        provider=route.provider_name,
+                        model=route.model,
                         state="error",
-                        detail="Lokalny model nie ukończył odpowiedzi.",
-                    )
+                        detail="Model nie ukończył odpowiedzi.",
+                    ),
+                    route.candidate,
                 )
                 raise
             finally:
@@ -124,9 +181,10 @@ class LocalConversationService:
         operation_id: UUID,
         user_text: str,
         visual: VisionCaptureOutcome | None,
+        route: SelectedModel,
     ) -> str:
         messages = list(self._context.messages_for(user_text))
-        if self._memory_store is not None:
+        if self._memory_store is not None and route.local:
             try:
                 # This is one bounded, indexed read (at most 12 records and 4 KB)
                 # performed before the provider stream starts. Keeping it inline
@@ -138,7 +196,11 @@ class LocalConversationService:
                 messages.insert(
                     1, ChatMessage(role="system", content=_memory_context_message(remembered))
                 )
-        tools = self._tool_engine.registry.model_definitions() if self._tool_engine else ()
+        tools = (
+            self._tool_engine.registry.model_definitions()
+            if self._tool_engine and route.capabilities.tools
+            else ()
+        )
         next_images: tuple[VisionImage, ...] = ()
         if visual is not None and visual.image is not None:
             next_images = (visual.image,)
@@ -180,7 +242,7 @@ class LocalConversationService:
                 messages=tuple(messages), tools=tools, images=request_images
             )
             try:
-                async for event in self._provider.stream_turn(request):
+                async for event in self._router.stream_turn(route, request):
                     if isinstance(event, ModelTextDelta):
                         text_chunks.append(event.text)
                     elif isinstance(event, ModelToolCallDelta):
@@ -235,7 +297,7 @@ class LocalConversationService:
         raise ProviderProtocolError("Model tool loop did not complete")
 
     async def close(self) -> None:
-        await self._provider.close()
+        await self._router.close()
 
     async def _persist_completed_turn(self, user_text: str, assistant_text: str) -> None:
         if self._memory_store is None:
@@ -251,11 +313,13 @@ class LocalConversationService:
             # Persistence is best effort; a local DB outage must not discard a reply.
             return
 
-    def _publish_status(self, status: ModelStatus) -> None:
+    def _publish_status(self, status: ModelStatus, candidate: ModelCandidate) -> None:
         self._runtime.set_model_status(
             ModelStatusChangedPayload(
                 provider=status.provider,
                 model=status.model,
+                tier=candidate.tier,
+                location="local" if candidate.local else "cloud",
                 status=status.state,
                 detail=status.detail,
             )
@@ -429,6 +493,19 @@ def _requires_telemetry(text: str) -> bool:
             "fps",
             "spowalnia",
             "wolno działa",
+        )
+    )
+
+
+def _requires_tool_capability(text: str) -> bool:
+    if _requires_telemetry(text) or _requires_visual_capture(text):
+        return True
+    normalized = text.casefold()
+    return bool(
+        re.search(
+            r"\b(otwórz|uruchom|ustaw|przenieś|usuń|zrestartuj|wyłącz|sprawdź proces|"
+            r"aktywn[ey] okn|interfejs)\b",
+            normalized,
         )
     )
 

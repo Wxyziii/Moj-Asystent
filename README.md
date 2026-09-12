@@ -74,9 +74,12 @@ The deployment workflow is in `.github/workflows/pages.yml`.
 
 ## Status
 
-Milestones 1–11 are implemented: the Windows overlay, authenticated local core,
+Milestones 1–12 are implemented: the Windows overlay, authenticated local core,
 Polish audio pipeline, trained custom wake name, local streamed Qwen chat, the
 typed tool/permission boundary and request-scoped active-window/UI Automation
 context, selective local vision, request-driven system diagnostics, explicit
 local SQLite memory/routines and deterministic proactive watchers with bounded
-notifications. See `docs/ROADMAP.md` for the exact scope.
+notifications, plus deterministic hardware-aware Fast/Quality/Deep model
+routing. The final target-hardware model matrix and documented end-to-end V1
+interaction still need manual release-gate validation before the project is
+called reliable V1. See `docs/ROADMAP.md` for the exact scope.

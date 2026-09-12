@@ -167,11 +167,17 @@ class ModelProvider(Protocol):
 
 Initial providers:
 
-- Ollama/Qwen3.5 4B;
-- optional Ollama/Qwen3.5 9B;
-- llama.cpp hybrid provider for larger models.
+- loopback Ollama/Qwen3.5 4B (Fast) and optional 9B (Quality);
+- loopback llama.cpp with a configured Qwen3.5 27B GGUF and bounded CPU/GPU
+  hybrid offload (experimental Deep);
+- optional fixed-origin OpenRouter text provider, disabled by the default
+  local-only data policy.
 
-Model selection is not a UI concern.
+The provider-neutral router owns deterministic tier/capability selection,
+capacity admission and residency. The UI selects a policy/mode and displays the
+result; it does not implement routing business logic. Every provider feeds the
+same conversation/tool orchestration, so model selection cannot alter
+validation, permission or confirmation behavior.
 
 ### 7. Tool engine
 
@@ -316,7 +322,7 @@ Use a shared schema package for messages such as:
 - `model.status.changed`
 - `system.health`
 
-This is the implemented Protocol `1.3` set. Response streams carry one
+This is the implemented Protocol `1.4` set. Response streams carry one
 operation ID and strictly increasing sequence numbers; reconnecting clients
 cannot accept events correlated to an older WebSocket hello. Tool events also
 bind a call ID to one tool name for its entire lifecycle. The other planned
@@ -347,10 +353,19 @@ explicit/deep complex task -> larger llama.cpp hybrid tier
 
 Before loading a larger tier, check available VRAM/RAM and current gaming/high-load state.
 
-Milestone 5 implements the normal conversation branch through the replaceable
-local Ollama provider. Milestone 9 adds deterministic routing for diagnostic
-questions so the model receives fresh telemetry before explaining a result.
-Hardware-aware larger-tier routing remains assigned to later milestones.
+Milestone 12 implements this route through a provider-neutral deterministic
+router. `auto` scores only bounded request/context structure and capability
+requirements; Fast requests skip hardware sampling, while potential larger
+tiers consume an on-demand Milestone 9 snapshot. Automatic escalation is
+suppressed under high GPU load, and conservative RAM/VRAM guards reject models
+that predictably cannot fit. Explicit per-request Polish escalation may bypass
+the load preference but never capability, local-only or memory-capacity rules.
+
+Fallback order is Deep → Quality → Fast and Quality → Fast. Local candidates
+precede online candidates at the same tier. Protocol 1.4 exposes the selected
+provider, tier, local/cloud location and any fallback reason. One active model
+is tracked; provider switches unload the prior model when supported and an
+idle lifecycle task unloads it after a bounded timeout.
 
 ## Failure model
 

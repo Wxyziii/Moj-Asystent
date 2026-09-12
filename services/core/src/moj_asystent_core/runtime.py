@@ -128,12 +128,28 @@ class CoreRuntime:
         )
 
     def publish_response_started(
-        self, operation_id: UUID, *, model: str, mode: Literal["voice", "text"]
+        self,
+        operation_id: UUID,
+        *,
+        model: str,
+        mode: Literal["voice", "text"],
+        provider: Literal["ollama", "llama_cpp", "openrouter"],
+        tier: Literal["fast", "quality", "deep"],
+        location: Literal["local", "cloud"],
+        fallback_reason: str | None,
     ) -> None:
         self.publish(
             new_event(
                 "assistant.response.started",
-                AssistantResponseStartedPayload(operation_id=operation_id, model=model, mode=mode),
+                AssistantResponseStartedPayload(
+                    operation_id=operation_id,
+                    model=model,
+                    mode=mode,
+                    provider=provider,
+                    tier=tier,
+                    location=location,
+                    fallback_reason=fallback_reason,
+                ),
             )
         )
 
@@ -154,6 +170,10 @@ class CoreRuntime:
         *,
         spoken_text: str | None,
         model: str,
+        provider: Literal["ollama", "llama_cpp", "openrouter"],
+        tier: Literal["fast", "quality", "deep"],
+        location: Literal["local", "cloud"],
+        fallback_reason: str | None,
     ) -> None:
         self.publish(
             new_event(
@@ -162,8 +182,12 @@ class CoreRuntime:
                     operation_id=operation_id,
                     text=text,
                     spoken_text=spoken_text,
-                    kind="local_model",
+                    kind="local_model" if location == "local" else "cloud_model",
                     model=model,
+                    provider=provider,
+                    tier=tier,
+                    location=location,
+                    fallback_reason=fallback_reason,
                 ),
             )
         )

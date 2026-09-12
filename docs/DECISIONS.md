@@ -4,7 +4,7 @@
 
 Decision: desktop and core exchange explicit protocol-v1 envelopes over a localhost-only HTTP/WebSocket boundary. Every event contains a protocol version, event ID, UTC timestamp and nullable correlation ID. Unknown event types, extra fields and incompatible versions are rejected before they reach assistant state handling.
 
-Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.2` client therefore rejects `1.3`. Protocol `1.3` is the current exact capability set and adds correlated tool status, confirmation and result events to the `1.2` local-model events. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.3`. Any breaking schema or behavior change requires a new major version.
+Compatibility rule: the value is negotiated as an exact supported version, not as an implicit semantic-version range. A `1.3` client therefore rejects `1.4`. Protocol `1.4` is the current exact capability set and adds normalized provider, model-tier, location and fallback metadata to the `1.3` event set. During a migration the core may support multiple exact versions, but this implementation intentionally supports only `1.4`. Any breaking schema or behavior change requires a new major version.
 
 Connection rule: the desktop proves liveness through a bounded health check and a correlated WebSocket handshake, then reconnects with exponential backoff capped at 30 seconds. The core owns the authoritative state on one event loop and correlates every outbound event to that session's hello event. Event IDs are unique within a stream and duplicate IDs are rejected; events from superseded desktop connection attempts are ignored.
 
@@ -25,6 +25,33 @@ remain later milestones.
 
 Reason: this establishes useful private local chat while keeping model runtime,
 UI, future memory and future tool authorization as separate responsibilities.
+
+## 2026-09-12 — Deterministic local-first model routing
+
+Decision: the conversation orchestrator requests a model tier and required
+capabilities from one deterministic router. Fast `qwen3.5:4b` and optional
+Quality `qwen3.5:9b` use loopback Ollama; experimental Deep uses an explicitly
+configured Qwen3.5 27B GGUF through loopback llama.cpp CPU/GPU hybrid offload.
+The router considers request structure, bounded context size, capability needs
+and request-driven RAM/VRAM/GPU-load telemetry. It does not call another model
+to make the routing decision.
+
+The stored data policy defaults to `local_only`. OpenRouter is an optional,
+fixed-origin, text-only provider and is considered only after explicit
+`cloud_allowed` opt-in; private mode, secret-like content, persistent memory,
+screenshots and tool-required requests stay local. Provider choice never changes
+the ToolEngine, permission, confirmation, watcher, memory-authorization or OS
+safety boundaries. Downgrades are deterministic and visible in Protocol 1.4.
+
+Secrets are accepted only by the core process environment, removed immediately
+after startup and excluded from React, SQLite, ordinary configuration, logs and
+tool child environments. Native Windows credential provisioning remains a
+future hardening option; cloud is not required for V1.
+
+Reason: normal voice interactions need low latency and predictable resource use,
+while difficult analysis benefits from opt-in stronger tiers. One provider-
+neutral router preserves local-first privacy and the existing authorization
+architecture without making a large model permanently resident.
 
 ## 2026-09-10 — Per-launch local core credential
 

@@ -282,7 +282,7 @@ Example persisted metadata:
 
 Wake model filenames must be sanitized and should use internal IDs rather than assuming display names are valid filesystem names.
 
-The public onboarding/status payload never exposes the local model path. The local API requires the per-launch desktop credential and current exact Protocol 1.3 on every request; UUIDs, request bodies and base64 audio are size-limited and schema-validated.
+The public onboarding/status payload never exposes the local model path. The local API requires the per-launch desktop credential and current exact Protocol 1.4 on every request; UUIDs, request bodies and base64 audio are size-limited and schema-validated.
 
 Manual target-hardware validation completed on 2026-09-10 confirmed that a model trained from real user recordings recognized the chosen wake call and activated the assistant. This verifies the Milestone 4 exit path on real microphone input; broader recall and false-activation benchmarking remains ongoing quality work.
 

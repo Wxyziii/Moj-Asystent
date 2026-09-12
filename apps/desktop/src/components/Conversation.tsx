@@ -88,14 +88,14 @@ export function Conversation({
     !pendingConfirmation;
   const modelLabel =
     modelStatus?.status === "ready"
-      ? `${modelStatus.model} · lokalnie`
+      ? `${modelStatus.model} · ${modelStatus.location === "local" ? "lokalnie" : "online"}`
       : modelStatus?.status === "loading"
         ? `${modelStatus.model} · odpowiada…`
         : modelStatus?.status === "missing"
           ? `Brak modelu ${modelStatus.model}`
           : modelStatus?.status === "error"
             ? "Model wymaga ponowienia"
-            : "Ollama niedostępna";
+            : "Model niedostępny";
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -237,8 +237,8 @@ export function Conversation({
           <article className="message message--assistant">
             <p className="message__label">Mój Asystent</p>
             <p>
-              Powiedz lub napisz coś po polsku. Odpowiedź przygotuje lokalny
-              model, a dane pozostaną na tym komputerze.
+              Powiedz lub napisz coś po polsku. Odpowiedź przygotuje wybrany
+              model zgodnie z ustawionym trybem prywatności.
             </p>
           </article>
         ) : (
@@ -251,6 +251,16 @@ export function Conversation({
                 {message.role === "user" ? "Ty" : "Mój Asystent"}
               </p>
               <p>{message.text || (message.streaming ? "…" : "")}</p>
+              {message.role === "assistant" && message.model ? (
+                <small className="message__model">
+                  {message.provider === "openrouter"
+                    ? `Model online · OpenRouter · ${message.model}`
+                    : `${message.model} · lokalnie · ${message.tier ?? "fast"}`}
+                  {message.fallbackReason
+                    ? ` · Tryb zastępczy: ${message.fallbackReason}`
+                    : ""}
+                </small>
+              ) : null}
             </article>
           ))
         )}

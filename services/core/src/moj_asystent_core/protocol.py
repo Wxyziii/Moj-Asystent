@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, field_validator
 
-PROTOCOL_VERSION = "1.3"
+PROTOCOL_VERSION = "1.4"
 AssistantState = Literal[
     "idle",
     "wake_detected",
@@ -46,13 +46,13 @@ class EventPayload(StrictModel):
 
 class ClientHelloPayload(EventPayload):
     client_id: Annotated[str, Field(min_length=1, max_length=128)]
-    protocol_version: Literal["1.3"]
+    protocol_version: Literal["1.4"]
 
 
 class SystemHealthPayload(EventPayload):
     service: Literal["core"]
     status: Literal["ready", "stopping"]
-    protocol_version: Literal["1.3"]
+    protocol_version: Literal["1.4"]
     assistant_state: AssistantState
 
 
@@ -77,6 +77,10 @@ class AssistantResponseStartedPayload(EventPayload):
     operation_id: UUID
     model: Annotated[str, Field(min_length=1, max_length=128)]
     mode: Literal["voice", "text"]
+    provider: Literal["ollama", "llama_cpp", "openrouter"]
+    tier: Literal["fast", "quality", "deep"]
+    location: Literal["local", "cloud"]
+    fallback_reason: Annotated[str, Field(min_length=1, max_length=512)] | None
 
     @field_validator("operation_id", mode="before")
     @classmethod
@@ -99,8 +103,12 @@ class AssistantResponseCompletedPayload(EventPayload):
     operation_id: UUID
     text: Annotated[str, Field(min_length=1, max_length=8_192)]
     spoken_text: Annotated[str, Field(min_length=1, max_length=1_024)] | None
-    kind: Literal["local_model"]
+    kind: Literal["local_model", "cloud_model"]
     model: Annotated[str, Field(min_length=1, max_length=128)]
+    provider: Literal["ollama", "llama_cpp", "openrouter"]
+    tier: Literal["fast", "quality", "deep"]
+    location: Literal["local", "cloud"]
+    fallback_reason: Annotated[str, Field(min_length=1, max_length=512)] | None
 
     @field_validator("operation_id", mode="before")
     @classmethod
@@ -109,8 +117,10 @@ class AssistantResponseCompletedPayload(EventPayload):
 
 
 class ModelStatusChangedPayload(EventPayload):
-    provider: Literal["ollama"]
+    provider: Literal["ollama", "llama_cpp", "openrouter"]
     model: Annotated[str, Field(min_length=1, max_length=128)]
+    tier: Literal["fast", "quality", "deep"]
+    location: Literal["local", "cloud"]
     status: Literal["unavailable", "missing", "loading", "ready", "error"]
     detail: Annotated[str, Field(min_length=1, max_length=256)] | None
 
@@ -205,7 +215,7 @@ class WatcherNotificationPayload(EventPayload):
 
 
 class EventBase(StrictModel):
-    protocol_version: Literal["1.3"]
+    protocol_version: Literal["1.4"]
     event_id: UUID
     occurred_at: datetime
     correlation_id: UUID | None
@@ -340,7 +350,7 @@ def parse_event(value: object) -> ProtocolEvent:
     version = value.get("protocol_version")
     if version != PROTOCOL_VERSION:
         raise ProtocolValidationError(
-            "Unsupported protocol_version; expected 1.3",
+            "Unsupported protocol_version; expected 1.4",
             "unsupported_protocol",
         )
     event_type = value.get("type")

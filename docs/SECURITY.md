@@ -198,13 +198,36 @@ The core removes both credentials from its process environment after startup and
 
 Approved process restart binds PID, creation time, executable name and the resolved allowlisted image. Relaunch explicitly pins that verified executable even if the captured command line uses a different or relative first argument.
 
-Wake-name onboarding uses the same boundary. Session, calibration, training, validation and activation endpoints require the credential and current exact Protocol 1.3. Session IDs are UUIDs, request models reject unknown fields, base64 PCM is bounded before decoding, and model activation accepts only a validated ONNX file in the service-owned model directory. Status responses redact filesystem paths. Temporary recordings and partial models are cleaned up on cancellation, failure and shutdown; the active model is replaced only through an atomic file operation.
+Wake-name onboarding uses the same boundary. Session, calibration, training, validation and activation endpoints require the credential and current exact Protocol 1.4. Session IDs are UUIDs, request models reject unknown fields, base64 PCM is bounded before decoding, and model activation accepts only a validated ONNX file in the service-owned model directory. Status responses redact filesystem paths. Temporary recordings and partial models are cleaned up on cancellation, failure and shutdown; the active model is replaced only through an atomic file operation.
 
 Local chat requests use the authenticated core API. The core alone contacts
 Ollama, accepts only an HTTP loopback origin, disables environment proxy use,
-validates bounded provider frames and publishes only typed Protocol 1.3 events.
+validates bounded provider frames and publishes only typed Protocol 1.4 events.
 Prompts and response text are held in bounded process memory and are not logged
 or persisted by Milestone 5.
+
+Milestone 12 preserves local-only as the default model data policy. Local
+provider origins are restricted to HTTP loopback endpoints. The optional
+OpenRouter adapter accepts only the fixed official HTTPS origin, follows no
+redirects, ignores environment proxy configuration and applies bounded connect,
+read, write and pool timeouts plus prompt, catalog, SSE-frame and response-size
+limits. A missing/rejected key, removed model, timeout or rate limit fails as a
+provider error and enters the router's visible fallback path.
+
+The OpenRouter key is read only by the core from
+`MOJ_ASYSTENT_OPENROUTER_API_KEY`, removed from the environment immediately and
+explicitly scrubbed from ToolEngine child environments. It is never returned to
+React, stored in SQLite/localStorage/config files or logged. Native Windows
+credential provisioning is not implemented, so cloud setup remains an
+operator-controlled optional path.
+
+Private mode, the default `local_only` policy, secret-like text in the current
+or bounded recent conversation, persistent memory records, screenshots, tool
+requests and destructive confirmation data cannot select the cloud candidate.
+Provider output and tool proposals remain
+untrusted. The existing typed ToolEngine, local policy, confirmation tickets
+and deterministic executors remain authoritative regardless of the selected
+model. Model routing itself has no permission-writing or OS-action surface.
 
 ## Logs
 

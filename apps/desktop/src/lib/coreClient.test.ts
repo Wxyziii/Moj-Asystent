@@ -40,7 +40,7 @@ class FakeSocket extends EventTarget {
 const health = {
   service: "core",
   status: "ready",
-  protocol_version: "1.3",
+  protocol_version: "1.4",
   assistant_state: "idle",
 };
 const response = () => ({
@@ -52,12 +52,32 @@ const wire = (
   payload: unknown,
   correlation_id: string | null = null,
 ) => ({
-  protocol_version: "1.3",
+  protocol_version: "1.4",
   event_id: crypto.randomUUID(),
   occurred_at: new Date().toISOString(),
   correlation_id,
   type,
   payload,
+});
+const startedPayload = (operation_id: string) => ({
+  operation_id,
+  model: "qwen3.5:4b",
+  mode: "text",
+  provider: "ollama",
+  tier: "fast",
+  location: "local",
+  fallback_reason: null,
+});
+const completedPayload = (operation_id: string, text: string) => ({
+  operation_id,
+  text,
+  spoken_text: null,
+  kind: "local_model",
+  model: "qwen3.5:4b",
+  provider: "ollama",
+  tier: "fast",
+  location: "local",
+  fallback_reason: null,
 });
 function synchronize(socket: FakeSocket, state: AssistantState = "idle") {
   socket.open();
@@ -246,7 +266,7 @@ it("delivers one validated, ordered local-model stream", async () => {
   socket.frame(
     wire(
       "assistant.response.started",
-      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      startedPayload(operation),
       socket.hello.event_id,
     ),
   );
@@ -260,13 +280,7 @@ it("delivers one validated, ordered local-model stream", async () => {
   socket.frame(
     wire(
       "assistant.response.completed",
-      {
-        operation_id: operation,
-        text: "Cześć",
-        spoken_text: null,
-        kind: "local_model",
-        model: "qwen3.5:4b",
-      },
+      completedPayload(operation, "Cześć"),
       socket.hello.event_id,
     ),
   );
@@ -284,7 +298,7 @@ it("delivers a tool lifecycle only within its active operation and call", async 
   socket.frame(
     wire(
       "assistant.response.started",
-      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      startedPayload(operation),
       socket.hello.event_id,
     ),
   );
@@ -351,7 +365,7 @@ it("rejects a stale tool result from a completed operation", async () => {
   socket.frame(
     wire(
       "assistant.response.started",
-      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      startedPayload(operation),
       socket.hello.event_id,
     ),
   );
@@ -370,13 +384,7 @@ it("rejects a stale tool result from a completed operation", async () => {
   socket.frame(
     wire(
       "assistant.response.completed",
-      {
-        operation_id: operation,
-        text: "Gotowe.",
-        spoken_text: null,
-        kind: "local_model",
-        model: "qwen3.5:4b",
-      },
+      completedPayload(operation, "Gotowe."),
       socket.hello.event_id,
     ),
   );
@@ -407,7 +415,7 @@ it("rejects a tool event that substitutes the tool name for an active call", asy
   socket.frame(
     wire(
       "assistant.response.started",
-      { operation_id: operation, model: "qwen3.5:4b", mode: "text" },
+      startedPayload(operation),
       socket.hello.event_id,
     ),
   );
@@ -483,7 +491,7 @@ it("sends trimmed typed chat with the exact protocol version", async () => {
         Authorization: `Bearer ${TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ protocol_version: "1.3", text: "Cześć" }),
+      body: JSON.stringify({ protocol_version: "1.4", text: "Cześć" }),
     }),
   );
 });
@@ -563,7 +571,7 @@ it("detects a silent core and refreshes the liveness deadline on heartbeat", asy
 it("validates HTTP protocol compatibility before opening a socket", async () => {
   request.mockResolvedValue({
     ok: true,
-    text: async () => JSON.stringify({ ...health, protocol_version: "1.4" }),
+    text: async () => JSON.stringify({ ...health, protocol_version: "1.5" }),
   });
   const status = vi.fn();
   stop = connect(status, vi.fn());

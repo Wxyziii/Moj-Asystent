@@ -1,10 +1,62 @@
 # AI Model Strategy
 
-## Implemented local chat (Milestone 5)
+## Implemented model routing (Milestone 12)
+
+The conversation orchestrator now requests a capability and tier from a
+deterministic `ModelRouter`; it does not select an Ollama tag itself. The
+configured tiers are:
+
+- Fast/default: `qwen3.5:4b` through loopback Ollama;
+- Quality: optional `qwen3.5:9b` through loopback Ollama;
+- Deep/experimental: a user-supplied Qwen3.5 27B GGUF through a loopback
+  llama.cpp server, with bounded context and configurable GPU offload;
+- optional online Deep fallback: an explicitly configured OpenRouter model,
+  disabled unless `cloud_allowed` is selected.
+
+The 4B and 9B choices were rechecked against the
+[official Ollama Qwen3.5 catalog](https://ollama.com/library/qwen3.5), and the
+27B architecture against the
+[official Qwen repository](https://huggingface.co/Qwen/Qwen3.5-27B), on
+2026-09-12. The application never invents or downloads a Deep tag: the GGUF
+file and llama.cpp executable/server are explicit operator configuration.
+
+Modes are `private`, `fast`, `quality`, `deep` and `auto`. `private` is always
+local-only. The default data policy is `local_only`; online routing requires a
+separate explicit opt-in. Secret-like content in both the current request and
+bounded recent conversation prevents an online route. Polish escalation phrases such as `Przemyśl to
+dokładniej`, `Użyj lepszego modelu` and `Przeanalizuj to głębiej` affect one
+operation only and do not overwrite the stored global preference.
+
+Auto routing uses bounded, explainable signals: request/context size,
+reasoning/coding structure, required image/tool capabilities and request-driven
+Milestone 9 RAM/VRAM/GPU-load telemetry. It does not call a model to choose a
+model. Under high GPU load it stays on Fast unless the user explicitly asks for
+an escalation. Predictable local capacity guards require at least 6 GiB free
+RAM for Quality, at least 6 GiB total and 2 GiB free VRAM when VRAM data is
+available, and at least 24 GiB total/16 GiB free RAM for the hybrid Deep tier.
+These are conservative admission guards, not benchmark claims.
+
+Fallback order is `Deep -> Quality -> Fast` and `Quality -> Fast`. Local
+candidates are considered before online candidates at the same tier. Every
+downgrade is included in response metadata and shown in the overlay. Required
+image and tool capabilities are hard filters, so text-only providers cannot
+receive screenshots or participate in a tool-required operation.
+
+Only one selected provider is active for an operation. Switching providers
+unloads the previous one where supported, Ollama uses bounded `keep_alive`, and
+an idle task unloads the active provider after five minutes and never unloads
+during an active generation. Cancellation is preserved across provider streams
+and performance samples are held only in a bounded 64-entry process-memory
+buffer. Samples include first-output/total latency, output characters and exact
+token/provider-cost metadata only when the provider returns it. OpenRouter cost
+is labelled as `openrouter_credits`; the core never assumes a currency,
+estimates pricing or persists cost.
+
+## Initial local chat foundation (Milestone 5)
 
 The initial chat path uses `qwen3.5:4b` through Ollama at the loopback-only
 origin `http://127.0.0.1:11434`. The core validates provider responses and
-streams display text through the current exact Protocol 1.3; the desktop never talks to Ollama
+streams display text through the current exact Protocol 1.4; the desktop never talks to Ollama
 directly. `MOJ_ASYSTENT_OLLAMA_URL` and `MOJ_ASYSTENT_LLM_MODEL` may select a
 different loopback Ollama origin or compatible local model without changing
 conversation orchestration.
@@ -132,16 +184,16 @@ Model routing should consider:
 
 ## Provider abstraction
 
-Implemented main-chat interface:
+Implemented provider-neutral main-chat interface:
 
 ```python
 class ChatProvider(Protocol):
     async def status(self) -> ModelStatus: ...
-    def stream(self, request: LanguageModelRequest) -> AsyncIterator[str]: ...
+    def stream_turn(
+        self, request: LanguageModelRequest
+    ) -> AsyncIterator[ModelStreamEvent]: ...
+    async def unload(self) -> None: ...  # optional capability
     async def close(self) -> None: ...
-
-class EmbeddingProvider(Protocol):
-    async def embed(self, texts: list[str]) -> list[list[float]]: ...
 ```
 
 No business logic should depend directly on Ollama-specific response objects.
@@ -216,14 +268,20 @@ Minimum evaluation set should include Polish:
 
 Record benchmark results in a future `docs/benchmarks/` directory.
 
-## Cloud fallback
+## Optional cloud fallback
 
-Not required for V1.
+OpenRouter is an optional text-only provider seam, not a V1 dependency. It uses
+only the fixed official HTTPS origin, rejects redirects, ignores environment
+proxies, validates model availability and bounds prompts, SSE frames, output and
+timeouts. A model ID and `MOJ_ASYSTENT_OPENROUTER_API_KEY` must be supplied to
+the core environment; the key is removed from that environment at startup,
+never enters React, SQLite, logs or repository configuration, and is scrubbed
+from tool child processes. Windows credential-manager provisioning is not yet
+implemented.
 
-If introduced later:
-
-- disabled by default;
-- clearly labeled;
-- never silently upload screen/audio/private files;
-- per-request consent/policy for sensitive context;
-- local tool permissions remain authoritative.
+Cloud is considered only when both a cloud model is configured and the stored
+policy is `cloud_allowed`. Private mode, secret-like text, images, tool calls
+and persistent-memory context remain local. Cloud output is untrusted and any
+future cloud tool proposal must traverse the same ToolEngine, permission policy,
+confirmation and deterministic executor. No billing logic or guessed price is
+implemented.

@@ -129,7 +129,7 @@ Completed scope:
 
 - replaceable loopback-only Ollama provider with `qwen3.5:4b` as the default;
 - Polish-only system prompt with an explicit no-system-actions boundary;
-- validated, cancellable response streaming through the current exact Protocol 1.3 events;
+- validated, cancellable response streaming through the current exact Protocol 1.4 events;
 - bounded process-local conversation context containing completed turns only;
 - authenticated typed-chat endpoint and enabled desktop composer;
 - visible unavailable, missing, loading, ready and error model states;
@@ -265,14 +265,30 @@ vision continuously or add arbitrary command execution.
 
 ## Milestone 12 — Quality/deep routing
 
-Status: `planned`
+Status: `done`
 
 Deliverables:
 
-- hardware-aware model router;
-- optional Qwen3.5 9B tier;
-- llama.cpp hybrid larger-model experimentation;
-- VRAM/RAM/load-aware residency policy.
+- deterministic provider-neutral routing modes: Private, Fast, Quality, Deep
+  and Auto, with one-request Polish escalation;
+- Fast `qwen3.5:4b` and optional Quality `qwen3.5:9b` through loopback Ollama;
+- configurable experimental Qwen3.5 27B GGUF through loopback llama.cpp
+  CPU/GPU hybrid offload;
+- request-driven Milestone 9 RAM/VRAM/GPU-load admission, high-load protection,
+  single-provider residency and bounded idle unload;
+- optional fixed-origin OpenRouter text fallback behind explicit
+  `cloud_allowed` policy, with secrets kept outside React and persistence;
+- capability-aware tool/vision routing, visible fallback metadata, persistent
+  model preference UI and bounded ephemeral latency/provider usage metrics;
+- Protocol 1.4 model route metadata across JSON Schema, Python and TypeScript.
+
+Automated Milestone 12 checks are complete. A real RTX 3070 target check on
+2026-09-12 confirmed the installed Fast `qwen3.5:4b` model can load on GPU and
+answer a simple Polish question. Quality 9B, llama.cpp Deep, high-load routing,
+restart persistence and optional cloud were not manually exercised because
+those providers/configurations were not installed. The full documented V1
+interaction matrix therefore remains a manual release gate, and the project is
+not yet claimed reliable V1.
 
 ## V1 release gate
 

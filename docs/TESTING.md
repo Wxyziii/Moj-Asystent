@@ -108,6 +108,15 @@ allowlisted Calculator launch, and volume set/restore (37% back to the original
 destructive operation was used. The first run exposed Windows PID 0 and empty
 executable metadata; both are now normalized behind a regression test.
 
+Milestone 12 target inspection on 2026-09-12 found an RTX 3070 with 8 GiB VRAM
+and the official `qwen3.5:4b` Ollama model installed. A harmless Polish CLI
+prompt loaded that Fast model on GPU and returned the correct Polish answer.
+`qwen3.5:9b`, llama.cpp/Deep and OpenRouter were not installed or configured,
+so Quality, Deep, cloud, high-load behavior and restart preference persistence
+have automated fake-provider coverage but still require the manual model-tier
+matrix before release. The complete canonical V1 flow below was not rerun as
+part of this implementation pass.
+
 ## Model evaluation
 
 Maintain a small Polish benchmark set covering:

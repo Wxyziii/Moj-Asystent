@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal, Self, cast
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
@@ -23,6 +23,7 @@ from pydantic import (
     StrictBool,
     StrictInt,
     field_validator,
+    model_validator,
 )
 
 from .audio import AudioConfig, AudioPipeline, PcmFrame
@@ -58,6 +59,19 @@ from .memory import (
     WatcherEventRecord,
     WatcherRecord,
     default_memory_database_path,
+)
+from .model_providers import (
+    DEFAULT_LLAMA_CPP_URL,
+    LlamaCppLanguageModelProvider,
+    OpenRouterLanguageModelProvider,
+)
+from .model_routing import (
+    DataPolicy,
+    ModelCandidate,
+    ModelMode,
+    ModelRouter,
+    ProviderCapabilities,
+    TelemetryRoutingHardwareProvider,
 )
 from .protocol import (
     PROTOCOL_VERSION,
@@ -101,7 +115,7 @@ ALLOWED_ORIGINS = (
 
 class StrictRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    protocol_version: Literal["1.3"]
+    protocol_version: Literal["1.4"]
 
 
 class BeginOnboardingRequest(StrictRequest):
@@ -185,6 +199,17 @@ class MemorySettingRequest(StrictRequest):
     enabled: StrictBool
 
 
+class ModelSettingsRequest(StrictRequest):
+    mode: ModelMode | None = None
+    data_policy: DataPolicy | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_value(self) -> Self:
+        if self.mode is None and self.data_policy is None:
+            raise ValueError("At least one model setting is required")
+        return self
+
+
 class MemoryWriteRequest(StrictRequest):
     key: str = Field(min_length=1, max_length=96)
     value: str = Field(min_length=1, max_length=2_048)
@@ -238,6 +263,16 @@ class CoreSettings:
     wake_data_root: Path = field(default_factory=default_wake_root)
     ollama_url: str = DEFAULT_OLLAMA_URL
     llm_model: str = DEFAULT_MODEL
+    quality_model: str = "qwen3.5:9b"
+    llama_cpp_url: str = DEFAULT_LLAMA_CPP_URL
+    llama_cpp_model: str = "Qwen3.5 27B GGUF"
+    llama_cpp_model_path: Path | None = None
+    llama_cpp_executable_path: Path | None = None
+    llama_cpp_gpu_layers: int = 20
+    llama_cpp_context_size: int = 16_384
+    openrouter_model: str | None = None
+    openrouter_api_key: str | None = field(default=None, repr=False)
+    high_load_processes: tuple[str, ...] = ()
     permission_policy_path: Path = field(default_factory=default_policy_path)
     memory_database_path: Path = field(default_factory=default_memory_database_path)
     context: ContextSettings = field(default_factory=ContextSettings)
@@ -252,6 +287,119 @@ class CoreSettings:
             raise ValueError("Core timeouts must be positive and bounded")
         if self.credential.matches(self.action_credential.reveal()):
             raise ValueError("Core and action credentials must be distinct")
+        if not 0 <= self.llama_cpp_gpu_layers <= 256:
+            raise ValueError("llama.cpp GPU layer count is outside safe bounds")
+        if not 2_048 <= self.llama_cpp_context_size <= 65_536:
+            raise ValueError("llama.cpp context size is outside safe bounds")
+
+
+def _stored_model_mode(store: SQLiteMemoryStore) -> ModelMode:
+    record = store.preference("model_mode")
+    if record is not None and record.value in {"private", "fast", "quality", "deep", "auto"}:
+        return record.value
+    return "auto"
+
+
+def _stored_data_policy(store: SQLiteMemoryStore) -> DataPolicy:
+    record = store.preference("model_data_policy")
+    if record is not None and record.value in {"local_only", "cloud_allowed"}:
+        return record.value
+    return "local_only"
+
+
+def _build_model_router(
+    settings: CoreSettings,
+    platform: WindowsToolPlatform,
+    *,
+    mode: ModelMode,
+    data_policy: DataPolicy,
+) -> ModelRouter:
+    local_capabilities = ProviderCapabilities(
+        text=True,
+        image=True,
+        structured_output=True,
+        tools=True,
+        context_size=32_768,
+    )
+    deep_provider = LlamaCppLanguageModelProvider(
+        model=settings.llama_cpp_model,
+        model_path=settings.llama_cpp_model_path,
+        executable_path=settings.llama_cpp_executable_path,
+        base_url=settings.llama_cpp_url,
+        gpu_layers=settings.llama_cpp_gpu_layers,
+        context_size=settings.llama_cpp_context_size,
+    )
+    deep_size = None
+    if settings.llama_cpp_model_path is not None:
+        try:
+            deep_size = settings.llama_cpp_model_path.stat().st_size
+        except OSError:
+            deep_size = None
+    candidates = [
+        ModelCandidate(
+            tier="fast",
+            provider_name="ollama",
+            provider=OllamaLanguageModelProvider(
+                base_url=settings.ollama_url, model=settings.llm_model, keep_alive="5m"
+            ),
+            local=True,
+            capabilities=local_capabilities,
+            approximate_size_bytes=int(3.4 * 1024**3),
+        ),
+        ModelCandidate(
+            tier="quality",
+            provider_name="ollama",
+            provider=OllamaLanguageModelProvider(
+                base_url=settings.ollama_url,
+                model=settings.quality_model,
+                keep_alive="10m",
+            ),
+            local=True,
+            capabilities=local_capabilities,
+            approximate_size_bytes=int(6.6 * 1024**3),
+        ),
+        ModelCandidate(
+            tier="deep",
+            provider_name="llama_cpp",
+            provider=deep_provider,
+            local=True,
+            capabilities=ProviderCapabilities(
+                text=True,
+                image=False,
+                structured_output=True,
+                tools=False,
+                context_size=settings.llama_cpp_context_size,
+            ),
+            approximate_size_bytes=deep_size or 17 * 1024**3,
+        ),
+    ]
+    if settings.openrouter_model:
+        candidates.append(
+            ModelCandidate(
+                tier="deep",
+                provider_name="openrouter",
+                provider=OpenRouterLanguageModelProvider(
+                    api_key=settings.openrouter_api_key,
+                    model=settings.openrouter_model,
+                ),
+                local=False,
+                capabilities=ProviderCapabilities(
+                    text=True,
+                    image=False,
+                    structured_output=True,
+                    tools=False,
+                    context_size=32_768,
+                ),
+            )
+        )
+    return ModelRouter(
+        tuple(candidates),
+        TelemetryRoutingHardwareProvider(
+            platform.telemetry, high_load_processes=settings.high_load_processes
+        ),
+        mode=mode,
+        data_policy=data_policy,
+    )
 
 
 @asynccontextmanager
@@ -270,7 +418,6 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
             }
         )
     wake_provider = OpenWakeWordProvider(config.wake_model_path, config.development_wake_model)
-    provider: LanguageModelProvider = app.state.language_model_provider
     tool_platform = app.state.tool_platform or WindowsToolPlatform(
         context_settings=app.state.settings.context,
         vision_settings=app.state.settings.vision,
@@ -281,6 +428,24 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings.memory_database_path
     )
     app.state.memory_store = memory_store
+    configured_mode = _stored_model_mode(memory_store)
+    configured_policy = _stored_data_policy(memory_store)
+    router = app.state.model_router
+    if router is None:
+        injected_provider: LanguageModelProvider | None = app.state.language_model_provider
+        if injected_provider is not None:
+            router = ModelRouter.from_provider(injected_provider)
+        else:
+            router = _build_model_router(
+                app.state.settings,
+                tool_platform,
+                mode=configured_mode,
+                data_policy=configured_policy,
+            )
+    router.set_mode(configured_mode)
+    router.set_data_policy(configured_policy)
+    app.state.model_router = router
+    await router.start()
 
     def publish_watcher_notification(payload) -> None:
         runtime.publish(new_event("watcher.notification", payload))
@@ -302,7 +467,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.tool_engine = tool_engine
     conversation = LocalConversationService(
-        runtime, provider, tool_engine=tool_engine, memory_store=memory_store
+        runtime, router, tool_engine=tool_engine, memory_store=memory_store
     )
     routine_service = RoutineService(memory_store, tool_engine)
     app.state.routine_service = routine_service
@@ -360,13 +525,13 @@ def create_app(
     tool_platform: WindowsToolPlatform | None = None,
     memory_store: SQLiteMemoryStore | None = None,
     watcher_provider: WatcherObservationProvider | None = None,
+    model_router: ModelRouter | None = None,
 ) -> FastAPI:
     resolved = settings or CoreSettings()
     app = FastAPI(title="Mój Asystent Core", version=PROTOCOL_VERSION, lifespan=lifecycle)
     app.state.settings = resolved
-    app.state.language_model_provider = language_model_provider or OllamaLanguageModelProvider(
-        base_url=resolved.ollama_url, model=resolved.llm_model
-    )
+    app.state.language_model_provider = language_model_provider
+    app.state.model_router = model_router
     app.state.tool_platform = tool_platform
     app.state.memory_store = memory_store
     app.state.watcher_provider = watcher_provider
@@ -459,6 +624,77 @@ def create_app(
     ) -> dict[str, object]:
         status = await app.state.conversation.refresh_status()
         return status.model_dump()
+
+    @app.get("/model/settings")
+    async def model_settings(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, str]:
+        router: ModelRouter = app.state.model_router
+        effective = "local_only" if router.mode == "private" else router.data_policy
+        return {
+            "mode": router.mode,
+            "data_policy": router.data_policy,
+            "effective_data_policy": effective,
+        }
+
+    @app.patch("/model/settings")
+    async def update_model_settings(
+        request: ModelSettingsRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, str]:
+        router: ModelRouter = app.state.model_router
+        await app.state.chat.cancel()
+        if request.mode is not None:
+            await memory_call(
+                app.state.memory_store.remember_preference,
+                "model_mode",
+                request.mode,
+                source="settings",
+            )
+            router.set_mode(request.mode)
+        if request.data_policy is not None:
+            await memory_call(
+                app.state.memory_store.remember_preference,
+                "model_data_policy",
+                request.data_policy,
+                source="settings",
+            )
+            router.set_data_policy(request.data_policy)
+        effective = "local_only" if router.mode == "private" else router.data_policy
+        return {
+            "mode": router.mode,
+            "data_policy": router.data_policy,
+            "effective_data_policy": effective,
+        }
+
+    @app.get("/models/catalog")
+    async def model_catalog(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        router: ModelRouter = app.state.model_router
+        entries = []
+        for candidate, status in await router.catalog():
+            entries.append(
+                {
+                    "tier": candidate.tier,
+                    "provider": candidate.provider_name,
+                    "model": candidate.provider.model,
+                    "location": "local" if candidate.local else "cloud",
+                    "capabilities": candidate.capabilities.model_dump(mode="json"),
+                    "approximate_size_bytes": candidate.approximate_size_bytes,
+                    "status": status.state,
+                    "detail": status.detail,
+                    "resident": router.is_resident(candidate),
+                }
+            )
+        return {"models": entries}
+
+    @app.get("/model/metrics")
+    async def model_metrics(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        router: ModelRouter = app.state.model_router
+        return {"metrics": [item.model_dump(mode="json") for item in router.metrics()[-20:]]}
 
     @app.get("/memory/settings")
     async def memory_settings(_: Annotated[None, Depends(authorize)]) -> dict[str, bool]:

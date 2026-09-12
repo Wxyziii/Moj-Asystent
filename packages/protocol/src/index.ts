@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = "1.3" as const;
+export const PROTOCOL_VERSION = "1.4" as const;
 
 export const assistantStates = [
   "idle",
@@ -50,13 +50,25 @@ export interface AssistantResponseCompleted extends EventBase {
     operation_id: string;
     text: string;
     spoken_text: string | null;
-    kind: "local_model";
+    kind: "local_model" | "cloud_model";
     model: string;
+    provider: "ollama" | "llama_cpp" | "openrouter";
+    tier: "fast" | "quality" | "deep";
+    location: "local" | "cloud";
+    fallback_reason: string | null;
   };
 }
 export interface AssistantResponseStarted extends EventBase {
   type: "assistant.response.started";
-  payload: { operation_id: string; model: string; mode: "voice" | "text" };
+  payload: {
+    operation_id: string;
+    model: string;
+    mode: "voice" | "text";
+    provider: "ollama" | "llama_cpp" | "openrouter";
+    tier: "fast" | "quality" | "deep";
+    location: "local" | "cloud";
+    fallback_reason: string | null;
+  };
 }
 export interface AssistantResponseDelta extends EventBase {
   type: "assistant.response.delta";
@@ -65,8 +77,10 @@ export interface AssistantResponseDelta extends EventBase {
 export interface ModelStatusChanged extends EventBase {
   type: "model.status.changed";
   payload: {
-    provider: "ollama";
+    provider: "ollama" | "llama_cpp" | "openrouter";
     model: string;
+    tier: "fast" | "quality" | "deep";
+    location: "local" | "cloud";
     status: "unavailable" | "missing" | "loading" | "ready" | "error";
     detail: string | null;
   };
@@ -136,12 +150,14 @@ export interface WatcherNotification extends EventBase {
   payload: {
     watcher_id: string;
     notification_id: string;
-    watcher_type: "window" | "process" | "file" | "resource" | "build" | "download";
+    watcher_type:
+      "window" | "process" | "file" | "resource" | "build" | "download";
     event_type: string;
     title: string;
     message: string;
     target: string;
-    status: "active" | "paused" | "completed" | "failed" | "cancelled" | "expired";
+    status:
+      "active" | "paused" | "completed" | "failed" | "cancelled" | "expired";
     actions: Array<"inspect" | "later" | "stop">;
   };
 }
@@ -428,20 +444,46 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         "spoken_text",
         "kind",
         "model",
+        "provider",
+        "tier",
+        "location",
+        "fallback_reason",
       ]) &&
         isUuid(payload.operation_id) &&
         boundedString(payload.text, 1, 8_192) &&
         (payload.spoken_text === null ||
           boundedString(payload.spoken_text, 1, 1_024)) &&
-        payload.kind === "local_model" &&
-        boundedString(payload.model, 1, 128)
+        (payload.kind === "local_model" || payload.kind === "cloud_model") &&
+        boundedString(payload.model, 1, 128) &&
+        ["ollama", "llama_cpp", "openrouter"].includes(
+          String(payload.provider),
+        ) &&
+        ["fast", "quality", "deep"].includes(String(payload.tier)) &&
+        ["local", "cloud"].includes(String(payload.location)) &&
+        (payload.fallback_reason === null ||
+          boundedString(payload.fallback_reason, 1, 512))
         ? (value as unknown as AssistantResponseCompleted)
         : null;
     case "assistant.response.started":
-      return exactObject(payload, ["operation_id", "model", "mode"]) &&
+      return exactObject(payload, [
+        "operation_id",
+        "model",
+        "mode",
+        "provider",
+        "tier",
+        "location",
+        "fallback_reason",
+      ]) &&
         isUuid(payload.operation_id) &&
         boundedString(payload.model, 1, 128) &&
-        (payload.mode === "voice" || payload.mode === "text")
+        (payload.mode === "voice" || payload.mode === "text") &&
+        ["ollama", "llama_cpp", "openrouter"].includes(
+          String(payload.provider),
+        ) &&
+        ["fast", "quality", "deep"].includes(String(payload.tier)) &&
+        ["local", "cloud"].includes(String(payload.location)) &&
+        (payload.fallback_reason === null ||
+          boundedString(payload.fallback_reason, 1, 512))
         ? (value as unknown as AssistantResponseStarted)
         : null;
     case "assistant.response.delta":
@@ -454,9 +496,20 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         ? (value as unknown as AssistantResponseDelta)
         : null;
     case "model.status.changed":
-      return exactObject(payload, ["provider", "model", "status", "detail"]) &&
-        payload.provider === "ollama" &&
+      return exactObject(payload, [
+        "provider",
+        "model",
+        "tier",
+        "location",
+        "status",
+        "detail",
+      ]) &&
+        ["ollama", "llama_cpp", "openrouter"].includes(
+          String(payload.provider),
+        ) &&
         boundedString(payload.model, 1, 128) &&
+        ["fast", "quality", "deep"].includes(String(payload.tier)) &&
+        ["local", "cloud"].includes(String(payload.location)) &&
         modelStatuses.includes(
           payload.status as (typeof modelStatuses)[number],
         ) &&
@@ -569,12 +622,19 @@ export function parseProtocolEvent(value: unknown): ProtocolEvent | null {
         boundedString(payload.title, 1, 128) &&
         boundedString(payload.message, 1, 512) &&
         boundedString(payload.target, 1, 1_024) &&
-        ["active", "paused", "completed", "failed", "cancelled", "expired"].includes(
-          String(payload.status),
-        ) &&
+        [
+          "active",
+          "paused",
+          "completed",
+          "failed",
+          "cancelled",
+          "expired",
+        ].includes(String(payload.status)) &&
         Array.isArray(payload.actions) &&
         payload.actions.length <= 3 &&
-        payload.actions.every((item) => ["inspect", "later", "stop"].includes(String(item)))
+        payload.actions.every((item) =>
+          ["inspect", "later", "stop"].includes(String(item)),
+        )
         ? (value as unknown as WatcherNotification)
         : null;
     default:

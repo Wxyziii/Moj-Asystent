@@ -6,6 +6,26 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 12 provider-neutral hardware-aware model routing with persistent
+  Private, Fast, Quality, Deep and Auto modes plus one-request Polish escalation.
+- Fast `qwen3.5:4b` and optional Quality `qwen3.5:9b` through loopback Ollama,
+  configurable experimental Qwen3.5 27B GGUF through loopback llama.cpp, and an
+  optional fixed-origin OpenRouter text provider behind explicit cloud opt-in.
+- Deterministic capability, RAM, VRAM and GPU-load admission; predictable
+  visible fallbacks; single-model residency; idle unload; cancellation-safe
+  switching; and bounded in-memory latency metrics.
+- Exact provider token/cost usage is retained only in that bounded metric buffer
+  when supplied; OpenRouter values remain labelled as credits and the core
+  performs no billing calculation, currency assumption or cost estimation.
+- Protocol 1.4 response/model metadata and a polished Polish Settings → AI
+  surface showing mode, privacy, provider, tier, location, readiness and size.
+- Security and regression coverage for local-only enforcement, secret-like
+  context exclusion, provider URL/response bounds, cloud failure mapping,
+  capability requirements and unchanged ToolEngine/memory boundaries.
+- Fixed two Milestone 12 review findings before release: recent secret-like
+  conversation context now blocks cloud routing, and idle cleanup cannot unload
+  a model while its generation stream is active.
+
 - Milestone 11 deterministic proactive watchers for windows, processes, files,
   resources, builds and downloads, with explicit authenticated lifecycle APIs.
 - Added confirmation-gated typed watcher-management tools so explicit Polish

@@ -38,7 +38,7 @@ adaptera kończy obserwację stanem `failed` zamiast próbować innego celu.
 
 ## Powiadomienia i historia
 
-Tylko znaczące przejścia trafiają do zdarzenia Protocol 1.3
+Tylko znaczące przejścia trafiają do zdarzenia Protocol 1.4
 `watcher.notification`. Zdarzenie zawiera identyfikator obserwacji,
 identyfikator powiadomienia, typ, krótki komunikat, cel i akcje `inspect`,
 `later`, `stop`. Powiadomienia są kierowane wyłącznie do uwierzytelnionych

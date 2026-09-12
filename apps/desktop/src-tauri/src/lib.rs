@@ -145,7 +145,7 @@ fn post_confirmation_decision(
 ) -> Result<(), String> {
     validate_confirmation_decision(decision)?;
     let body = serde_json::json!({
-        "protocol_version": "1.3",
+        "protocol_version": "1.4",
         "confirmation_id": decision.confirmation_id,
         "operation_id": decision.operation_id,
         "call_id": decision.call_id,

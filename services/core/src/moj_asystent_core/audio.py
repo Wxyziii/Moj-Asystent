@@ -354,7 +354,13 @@ class AudioPipeline:
                 answer = f"Usłyszałem: „{response.transcript}”."
                 spoken_answer = answer
                 self._runtime.publish_response_started(
-                    operation_id, model="development-fallback", mode="voice"
+                    operation_id,
+                    model="development-fallback",
+                    mode="voice",
+                    provider="ollama",
+                    tier="fast",
+                    location="local",
+                    fallback_reason="Tryb deweloperski bez modelu AI.",
                 )
                 self._runtime.publish_response_delta(operation_id, 0, answer)
                 self._runtime.publish_response_completed(
@@ -362,6 +368,10 @@ class AudioPipeline:
                     answer,
                     spoken_text=answer,
                     model="development-fallback",
+                    provider="ollama",
+                    tier="fast",
+                    location="local",
+                    fallback_reason="Tryb deweloperski bez modelu AI.",
                 )
             else:
                 reply = await self._conversation.respond(

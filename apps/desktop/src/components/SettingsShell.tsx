@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BrainCircuit,
   Check,
   ChevronRight,
   Database,
@@ -25,6 +26,14 @@ import {
   type AliasRecord,
   type MemoryRecord,
 } from "../lib/memoryClient";
+import {
+  getModelCatalog,
+  getModelSettings,
+  updateModelSettings,
+  type ModelCatalogEntry,
+  type ModelMode,
+  type ModelSettings,
+} from "../lib/modelClient";
 import {
   cancelWatcher,
   deleteWatcher,
@@ -67,6 +76,27 @@ const watcherTypeLabels: Record<WatcherRecord["watcher_type"], string> = {
   build: "build",
   download: "pobieranie",
 };
+
+const modelModes: { value: ModelMode; label: string; detail: string }[] = [
+  { value: "private", label: "Private", detail: "Wyłącznie lokalnie" },
+  { value: "fast", label: "Fast", detail: "Zawsze 4B" },
+  { value: "quality", label: "Quality", detail: "Preferuj 9B" },
+  { value: "deep", label: "Deep", detail: "Najmocniejszy dostępny" },
+  { value: "auto", label: "Auto", detail: "Dobór do zadania i obciążenia" },
+];
+
+const modelStatusLabels: Record<ModelCatalogEntry["status"], string> = {
+  ready: "gotowy",
+  loading: "ładowanie",
+  missing: "niezainstalowany",
+  unavailable: "niedostępny",
+  error: "błąd",
+};
+
+function modelSize(value: number | null): string | undefined {
+  if (value === null) return undefined;
+  return `${(value / 1024 ** 3).toFixed(1)} GB`;
+}
 
 function watcherTargetLabel(watcher: WatcherRecord): string {
   const target = watcher.target;
@@ -120,6 +150,10 @@ export function SettingsShell({
   const [watchers, setWatchers] = useState<WatcherRecord[]>([]);
   const [watcherBusy, setWatcherBusy] = useState(false);
   const [watcherError, setWatcherError] = useState<string>();
+  const [modelSettings, setModelSettings] = useState<ModelSettings>();
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelError, setModelError] = useState<string>();
   const sections: SettingsSection[] = [
     {
       icon: SlidersHorizontal,
@@ -165,6 +199,28 @@ export function SettingsShell({
     }
   }, [coreStatus, credential]);
 
+  const refreshModels = useCallback(async () => {
+    if (!credential || coreStatus !== "connected") return;
+    setModelBusy(true);
+    setModelError(undefined);
+    try {
+      const [settings, catalog] = await Promise.all([
+        getModelSettings(credential),
+        getModelCatalog(credential),
+      ]);
+      setModelSettings(settings);
+      setModelCatalog(catalog);
+    } catch (error) {
+      setModelError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się odczytać modeli.",
+      );
+    } finally {
+      setModelBusy(false);
+    }
+  }, [coreStatus, credential]);
+
   const changeWatcher = async (
     watcher: WatcherRecord,
     action: "pause" | "resume" | "cancel" | "delete",
@@ -205,6 +261,55 @@ export function SettingsShell({
   useEffect(() => {
     void refreshMemory();
   }, [refreshMemory]);
+
+  useEffect(() => {
+    void refreshModels();
+  }, [refreshModels]);
+
+  const changeModelMode = async (mode: ModelMode) => {
+    if (!credential || modelBusy) return;
+    const previous = modelSettings;
+    setModelSettings((current) => (current ? { ...current, mode } : current));
+    setModelBusy(true);
+    setModelError(undefined);
+    try {
+      setModelSettings(await updateModelSettings(credential, { mode }));
+      setModelCatalog(await getModelCatalog(credential));
+    } catch (error) {
+      setModelSettings(previous);
+      setModelError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zmienić trybu modelu.",
+      );
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
+  const toggleCloud = async () => {
+    if (!credential || !modelSettings || modelBusy) return;
+    const previous = modelSettings;
+    const data_policy =
+      modelSettings.data_policy === "local_only"
+        ? "cloud_allowed"
+        : "local_only";
+    setModelBusy(true);
+    setModelError(undefined);
+    try {
+      setModelSettings(await updateModelSettings(credential, { data_policy }));
+      setModelCatalog(await getModelCatalog(credential));
+    } catch (error) {
+      setModelSettings(previous);
+      setModelError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zmienić polityki chmury.",
+      );
+    } finally {
+      setModelBusy(false);
+    }
+  };
 
   const toggleHistory = async () => {
     if (!credential || memoryBusy) return;
@@ -342,6 +447,103 @@ export function SettingsShell({
               <ChevronRight size={18} className="settings-row__chevron" />
             </button>
           ))}
+        </section>
+        <section
+          className="memory-settings model-settings"
+          aria-label="Modele AI"
+        >
+          <div className="memory-settings__heading">
+            <span className="settings-row__icon">
+              <BrainCircuit size={19} />
+            </span>
+            <div>
+              <strong>Modele AI</strong>
+              <small>Szybkość i jakość bez zmiany zasad uprawnień.</small>
+            </div>
+          </div>
+          {coreStatus !== "connected" || !modelSettings ? (
+            <p className="memory-settings__muted">
+              Połącz rdzeń, aby wybrać tryb modelu.
+            </p>
+          ) : (
+            <>
+              <div
+                className="model-mode-grid"
+                role="radiogroup"
+                aria-label="Tryb modelu"
+              >
+                {modelModes.map((mode) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={modelSettings.mode === mode.value}
+                    className={
+                      modelSettings.mode === mode.value
+                        ? "is-selected"
+                        : undefined
+                    }
+                    key={mode.value}
+                    onClick={() => void changeModelMode(mode.value)}
+                    disabled={modelBusy}
+                  >
+                    <strong>{mode.label}</strong>
+                    <small>{mode.detail}</small>
+                  </button>
+                ))}
+              </div>
+              <label className="memory-settings__toggle">
+                <span>
+                  <strong>Opcjonalne modele online</strong>
+                  <small>
+                    Wyłączone domyślnie. Private zawsze pozostaje lokalny.
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={modelSettings.data_policy === "cloud_allowed"}
+                  onChange={() => void toggleCloud()}
+                  disabled={modelBusy}
+                />
+              </label>
+              <p className="memory-settings__muted">
+                Polityka danych:{" "}
+                {modelSettings.effective_data_policy === "local_only"
+                  ? "tylko lokalnie"
+                  : "modele online dozwolone dla zwykłego tekstu"}
+                {modelSettings.mode === "private" &&
+                modelSettings.data_policy === "cloud_allowed"
+                  ? " · wymuszona przez Private"
+                  : ""}
+              </p>
+              <div className="memory-list model-catalog">
+                {modelCatalog.map((model) => (
+                  <div
+                    className="memory-list__item"
+                    key={`${model.provider}:${model.model}`}
+                  >
+                    <span>
+                      <strong>{model.model}</strong>
+                      <small>
+                        {model.tier} ·{" "}
+                        {model.location === "local" ? "lokalnie" : "online"}
+                        {modelSize(model.approximate_size_bytes)
+                          ? ` · ${modelSize(model.approximate_size_bytes)}`
+                          : ""}
+                      </small>
+                      {model.detail ? <small>{model.detail}</small> : null}
+                    </span>
+                    <span className="model-catalog__status">
+                      {model.resident ? "w pamięci · " : ""}
+                      {modelStatusLabels[model.status]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {modelError ? (
+            <p className="memory-settings__error">{modelError}</p>
+          ) : null}
         </section>
         <section className="memory-settings" aria-label="Pamięć lokalna">
           <div className="memory-settings__heading">

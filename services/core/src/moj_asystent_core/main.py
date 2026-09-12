@@ -1,6 +1,7 @@
 """Authenticated entry point for the local core service."""
 
 import os
+from pathlib import Path
 
 import uvicorn
 
@@ -32,6 +33,7 @@ def create_server(settings: CoreSettings) -> uvicorn.Server:
 def main() -> None:
     raw_credential = os.environ.pop("MOJ_ASYSTENT_SESSION_CREDENTIAL", None)
     raw_action_credential = os.environ.pop("MOJ_ASYSTENT_ACTION_CREDENTIAL", None)
+    raw_openrouter_key = os.environ.pop("MOJ_ASYSTENT_OPENROUTER_API_KEY", None)
     if raw_credential is None:
         raise RuntimeError("Core requires a per-launch session credential")
     if raw_action_credential is None:
@@ -44,7 +46,46 @@ def main() -> None:
             audio_enabled=True,
             ollama_url=os.environ.get("MOJ_ASYSTENT_OLLAMA_URL", "http://127.0.0.1:11434"),
             llm_model=os.environ.get("MOJ_ASYSTENT_LLM_MODEL", "qwen3.5:4b"),
+            quality_model=os.environ.get("MOJ_ASYSTENT_QUALITY_MODEL", "qwen3.5:9b"),
+            llama_cpp_url=os.environ.get("MOJ_ASYSTENT_LLAMA_CPP_URL", "http://127.0.0.1:11435"),
+            llama_cpp_model=os.environ.get("MOJ_ASYSTENT_LLAMA_CPP_MODEL", "Qwen3.5 27B GGUF"),
+            llama_cpp_model_path=_optional_path("MOJ_ASYSTENT_LLAMA_CPP_MODEL_PATH"),
+            llama_cpp_executable_path=_optional_path("MOJ_ASYSTENT_LLAMA_CPP_EXECUTABLE"),
+            llama_cpp_gpu_layers=_bounded_int(
+                "MOJ_ASYSTENT_LLAMA_CPP_GPU_LAYERS", 20, minimum=0, maximum=256
+            ),
+            llama_cpp_context_size=_bounded_int(
+                "MOJ_ASYSTENT_LLAMA_CPP_CONTEXT",
+                16_384,
+                minimum=2_048,
+                maximum=65_536,
+            ),
+            openrouter_model=os.environ.get("MOJ_ASYSTENT_OPENROUTER_MODEL") or None,
+            openrouter_api_key=raw_openrouter_key,
+            high_load_processes=tuple(
+                item.strip()
+                for item in os.environ.get("MOJ_ASYSTENT_HIGH_LOAD_PROCESSES", "").split(",")
+                if item.strip()
+            ),
             context=ContextSettings.from_environment(),
             vision=VisionSettings.from_environment(),
         )
     ).run()
+
+
+def _optional_path(name: str) -> Path | None:
+    value = os.environ.get(name)
+    return Path(value).expanduser() if value else None
+
+
+def _bounded_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be an integer") from error
+    if not minimum <= value <= maximum:
+        raise RuntimeError(f"{name} is outside supported bounds")
+    return value

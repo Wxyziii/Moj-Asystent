@@ -27,6 +27,11 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   text: string;
   streaming?: boolean;
+  model?: string;
+  provider?: "ollama" | "llama_cpp" | "openrouter";
+  tier?: "fast" | "quality" | "deep";
+  location?: "local" | "cloud";
+  fallbackReason?: string;
 }
 
 export function useAssistantUi() {
@@ -142,6 +147,11 @@ export function useAssistantUi() {
               role: "assistant" as const,
               text: "",
               streaming: true,
+              model: event.payload.model,
+              provider: event.payload.provider,
+              tier: event.payload.tier,
+              location: event.payload.location,
+              fallbackReason: event.payload.fallback_reason ?? undefined,
             },
           ].slice(-50),
         );
@@ -157,8 +167,30 @@ export function useAssistantUi() {
         );
         return;
       }
-      const role: ConversationMessage["role"] =
-        event.type === "audio.transcript.final" ? "user" : "assistant";
+      if (event.type === "assistant.response.completed") {
+        setMessages((current) => {
+          const id = event.payload.operation_id + "assistant";
+          const existing = current.find((message) => message.id === id);
+          const completed: ConversationMessage = {
+            ...existing,
+            id,
+            role: "assistant",
+            text: event.payload.text,
+            streaming: false,
+            model: event.payload.model,
+            provider: event.payload.provider,
+            tier: event.payload.tier,
+            location: event.payload.location,
+            fallbackReason: event.payload.fallback_reason ?? undefined,
+          };
+          return [
+            ...current.filter((message) => message.id !== id),
+            completed,
+          ].slice(-50);
+        });
+        return;
+      }
+      const role: ConversationMessage["role"] = "user";
       setMessages((current) =>
         [
           ...current.filter(

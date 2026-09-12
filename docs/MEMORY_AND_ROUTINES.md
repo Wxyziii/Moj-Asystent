@@ -23,6 +23,12 @@ security semantics and fail-closed recovery are already established, and
 mixing policy writes with user memory deletion would make privacy controls less
 predictable.
 
+Milestone 12 stores `model_mode` and `model_data_policy` as ordinary explicit
+preferences in this same store. They affect provider selection only and cannot
+change tool permission, confirmation, memory authorization or execution policy.
+Persistent memory records are supplied only to local model routes; selecting a
+larger context window does not increase the existing bounded retrieval budget.
+
 ## Explicit memory
 
 Preferences and memories are written only after an explicit user request (or
