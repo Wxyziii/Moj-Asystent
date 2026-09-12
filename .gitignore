@@ -63,6 +63,9 @@ model-cache/
 recordings/
 training-data/
 wakeword-data/
+benchmarks/stt/local/
+benchmarks/stt/results/
+benchmarks/stt/manifest.local.json
 models/wakewords/user/
 *.wav
 *.flac

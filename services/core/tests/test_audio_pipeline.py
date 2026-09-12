@@ -19,6 +19,8 @@ from moj_asystent_core.providers import (
     SpeechToTextResponse,
     TextToSpeechRequest,
     TextToSpeechResponse,
+    TranscriptionConfidence,
+    TranscriptionConfidenceLevel,
 )
 from moj_asystent_core.runtime import CoreRuntime
 
@@ -52,8 +54,13 @@ class FakeVad:
 
 
 class FakeStt:
-    def __init__(self, transcript: str = "Włącz światło") -> None:
+    def __init__(
+        self,
+        transcript: str = "Włącz światło",
+        confidence: TranscriptionConfidenceLevel = "unknown",
+    ) -> None:
         self.transcript = transcript
+        self.confidence = confidence
         self.requests: list[SpeechToTextRequest] = []
 
     async def transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse:
@@ -63,6 +70,7 @@ class FakeStt:
             language="pl",
             duration_ms=request.duration_ms,
             segments=(),
+            confidence=TranscriptionConfidence(level=self.confidence, reasons=()),
         )
 
     async def cancel(self) -> None:
@@ -83,10 +91,17 @@ class FakeTts:
 
 class FakeConversation:
     def __init__(self) -> None:
-        self.calls: list[tuple[object, str, str]] = []
+        self.calls: list[tuple[object, str, str, str | None]] = []
 
-    async def respond(self, operation_id, user_text: str, *, mode: str) -> ConversationReply:
-        self.calls.append((operation_id, user_text, mode))
+    async def respond(
+        self,
+        operation_id,
+        user_text: str,
+        *,
+        mode: str,
+        transcription_confidence: str | None = None,
+    ) -> ConversationReply:
+        self.calls.append((operation_id, user_text, mode, transcription_confidence))
         return ConversationReply(
             text="Pełna odpowiedź zawiera więcej szczegółów dla nakładki.",
             spoken_text="Krótka odpowiedź głosowa.",
@@ -216,6 +231,69 @@ async def test_complete_polish_voice_cycle_and_follow_up() -> None:
 
 
 @pytest.mark.asyncio
+async def test_vad_capture_preserves_bounded_pre_roll_and_post_roll() -> None:
+    runtime = CoreRuntime()
+    stt = FakeStt()
+    pipeline = AudioPipeline(
+        runtime,
+        config(
+            vad_pre_roll_ms=160,
+            vad_post_roll_ms=80,
+            trailing_silence_ms=160,
+            follow_up_timeout_seconds=1,
+        ),
+        FakeWake(),
+        FakeVad([0.0, 0.0, 0.8, 0.1, 0.1]),
+        stt,
+        FakeTts(),
+    )
+
+    await pipeline.manual_listen()
+    for _ in range(5):
+        await pipeline.handle_frame(frame())
+    await pipeline.wait_current_operation()
+
+    captured = stt.requests[0]
+    assert captured.duration_ms == 320
+    assert captured.pre_roll_ms == 160
+    assert captured.post_roll_ms == 80
+    assert captured.vad_speech_start_ms == 160
+    assert captured.vad_speech_end_ms == 240
+    await pipeline.shutdown()
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_utterance_buffer_never_exceeds_configured_audio_bound() -> None:
+    runtime = CoreRuntime()
+    stt = FakeStt()
+    pipeline = AudioPipeline(
+        runtime,
+        config(
+            vad_pre_roll_ms=160,
+            vad_post_roll_ms=80,
+            maximum_utterance_seconds=0.24,
+            follow_up_timeout_seconds=1,
+        ),
+        FakeWake(),
+        FakeVad([0.0, 0.0, 0.8, 0.8, 0.8]),
+        stt,
+        FakeTts(),
+    )
+
+    await pipeline.manual_listen()
+    for _ in range(5):
+        await pipeline.handle_frame(frame())
+    await pipeline.wait_current_operation()
+
+    captured = stt.requests[0]
+    assert captured.duration_ms <= 400
+    assert len(captured.pcm_s16le) <= 2 * 16_000 * 0.4
+    await pipeline.shutdown()
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_voice_cycle_uses_local_conversation_and_short_spoken_variant() -> None:
     runtime = CoreRuntime()
     tts = FakeTts()
@@ -234,8 +312,32 @@ async def test_voice_cycle_uses_local_conversation_and_short_spoken_variant() ->
         await pipeline.handle_frame(frame())
     await pipeline.wait_current_operation()
 
-    assert conversation.calls[0][1:] == ("Opowiedz więcej", "voice")
+    assert conversation.calls[0][1:] == ("Opowiedz więcej", "voice", "unknown")
     assert tts.requests[0].text == "Krótka odpowiedź głosowa."
+    await pipeline.shutdown()
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_low_stt_confidence_is_forwarded_to_conversation_authorization() -> None:
+    runtime = CoreRuntime()
+    conversation = FakeConversation()
+    pipeline = AudioPipeline(
+        runtime,
+        config(follow_up_timeout_seconds=1),
+        FakeWake(),
+        FakeVad([0.8, 0.1, 0.1]),
+        FakeStt("Usuń plik", confidence="low"),
+        FakeTts(),
+        conversation=conversation,
+    )
+
+    await pipeline.manual_listen()
+    for _ in range(3):
+        await pipeline.handle_frame(frame())
+    await pipeline.wait_current_operation()
+
+    assert conversation.calls[0][3] == "low"
     await pipeline.shutdown()
     await runtime.shutdown()
 

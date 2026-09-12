@@ -7,6 +7,7 @@ import {
   Eye,
   Keyboard,
   MonitorUp,
+  Plus,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
@@ -34,6 +35,12 @@ import {
   type ModelMode,
   type ModelSettings,
 } from "../lib/modelClient";
+import {
+  getVoiceSettings,
+  updateVoiceVocabulary,
+  type VoiceRuntimeState,
+  type VoiceSettings,
+} from "../lib/voiceClient";
 import {
   cancelWatcher,
   deleteWatcher,
@@ -91,6 +98,16 @@ const modelStatusLabels: Record<ModelCatalogEntry["status"], string> = {
   missing: "niezainstalowany",
   unavailable: "niedostępny",
   error: "błąd",
+};
+
+const voiceStatusLabels: Record<VoiceRuntimeState, string> = {
+  ready: "gotowy",
+  loading: "ładowanie",
+  unavailable: "niedostępny",
+  missing_model: "brak modelu",
+  cuda_unavailable: "GPU niedostępne",
+  fallback_active: "aktywny profil zapasowy",
+  transcription_failure: "błąd transkrypcji",
 };
 
 function modelSize(value: number | null): string | undefined {
@@ -154,6 +171,10 @@ export function SettingsShell({
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogEntry[]>([]);
   const [modelBusy, setModelBusy] = useState(false);
   const [modelError, setModelError] = useState<string>();
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>();
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceError, setVoiceError] = useState<string>();
+  const [vocabularyEntry, setVocabularyEntry] = useState("");
   const sections: SettingsSection[] = [
     {
       icon: SlidersHorizontal,
@@ -221,6 +242,23 @@ export function SettingsShell({
     }
   }, [coreStatus, credential]);
 
+  const refreshVoice = useCallback(async () => {
+    if (!credential || coreStatus !== "connected") return;
+    setVoiceBusy(true);
+    setVoiceError(undefined);
+    try {
+      setVoiceSettings(await getVoiceSettings(credential));
+    } catch (error) {
+      setVoiceError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się odczytać ustawień głosu.",
+      );
+    } finally {
+      setVoiceBusy(false);
+    }
+  }, [coreStatus, credential]);
+
   const changeWatcher = async (
     watcher: WatcherRecord,
     action: "pause" | "resume" | "cancel" | "delete",
@@ -265,6 +303,44 @@ export function SettingsShell({
   useEffect(() => {
     void refreshModels();
   }, [refreshModels]);
+
+  useEffect(() => {
+    void refreshVoice();
+  }, [refreshVoice]);
+
+  const saveVocabulary = async (vocabulary: string[]) => {
+    if (!credential || voiceBusy) return;
+    setVoiceBusy(true);
+    setVoiceError(undefined);
+    try {
+      setVoiceSettings(await updateVoiceVocabulary(credential, vocabulary));
+    } catch (error) {
+      setVoiceError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zapisać słownika.",
+      );
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  const addVocabularyEntry = () => {
+    if (!voiceSettings) return;
+    const entry = vocabularyEntry.trim();
+    if (!entry) return;
+    if (
+      voiceSettings.vocabulary.some(
+        (current) =>
+          current.toLocaleLowerCase("pl") === entry.toLocaleLowerCase("pl"),
+      )
+    ) {
+      setVocabularyEntry("");
+      return;
+    }
+    void saveVocabulary([...voiceSettings.vocabulary, entry]);
+    setVocabularyEntry("");
+  };
 
   const changeModelMode = async (mode: ModelMode) => {
     if (!credential || modelBusy) return;
@@ -447,6 +523,128 @@ export function SettingsShell({
               <ChevronRight size={18} className="settings-row__chevron" />
             </button>
           ))}
+        </section>
+        <section className="memory-settings voice-settings" aria-label="Głos">
+          <div className="memory-settings__heading">
+            <span className="settings-row__icon">
+              <Volume2 size={19} />
+            </span>
+            <div>
+              <strong>Głos</strong>
+              <small>Dokładność polskiego STT i lokalny słownik nazw.</small>
+            </div>
+          </div>
+          {coreStatus !== "connected" || !voiceSettings ? (
+            <p className="memory-settings__muted">
+              Połącz rdzeń, aby sprawdzić aktywny profil głosu.
+            </p>
+          ) : (
+            <>
+              <div className="voice-runtime">
+                <span>
+                  <strong>{voiceSettings.active.model}</strong>
+                  <small>
+                    {voiceSettings.active.device === "cuda" ? "GPU" : "CPU"}
+                    {" · "}
+                    {voiceSettings.active.compute_type}
+                  </small>
+                </span>
+                <span className="voice-runtime__status">
+                  {voiceStatusLabels[voiceSettings.active.status]}
+                </span>
+              </div>
+              {voiceSettings.active.fallback_reason ? (
+                <p className="voice-settings__notice">
+                  {voiceSettings.active.fallback_reason} Rozpoznawanie mowy
+                  działa na profilu zapasowym.
+                </p>
+              ) : null}
+              <div className="voice-vocabulary__heading">
+                <span>
+                  <strong>Słownik lokalny</strong>
+                  <small>
+                    Dodaj nazwy, komendy i terminy techniczne, które bywają
+                    przekręcane.
+                  </small>
+                </span>
+                <small>{voiceSettings.vocabulary.length}/32</small>
+              </div>
+              <div className="voice-vocabulary" aria-label="Słownik STT">
+                {voiceSettings.vocabulary.map((entry) => (
+                  <span className="voice-vocabulary__chip" key={entry}>
+                    {entry}
+                    <button
+                      type="button"
+                      aria-label={`Usuń ${entry} ze słownika`}
+                      disabled={voiceBusy}
+                      onClick={() =>
+                        void saveVocabulary(
+                          voiceSettings.vocabulary.filter(
+                            (current) => current !== entry,
+                          ),
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <form
+                className="voice-vocabulary__form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  addVocabularyEntry();
+                }}
+              >
+                <input
+                  aria-label="Nowy wpis słownika"
+                  placeholder="Np. Siekiera, GitHub, Proxmox"
+                  value={vocabularyEntry}
+                  maxLength={64}
+                  onChange={(event) => setVocabularyEntry(event.target.value)}
+                  disabled={voiceBusy || voiceSettings.vocabulary.length >= 32}
+                />
+                <button
+                  type="submit"
+                  aria-label="Dodaj do słownika"
+                  disabled={
+                    voiceBusy ||
+                    !vocabularyEntry.trim() ||
+                    voiceSettings.vocabulary.length >= 32
+                  }
+                >
+                  <Plus size={16} />
+                </button>
+              </form>
+              <details className="voice-advanced">
+                <summary>Parametry zaawansowane</summary>
+                <div>
+                  <p>
+                    Bufor przed mową: {voiceSettings.vad.pre_roll_ms} ms · po
+                    mowie: {voiceSettings.vad.post_roll_ms} ms
+                  </p>
+                  <p>
+                    Maksymalna wypowiedź:{" "}
+                    {voiceSettings.vad.maximum_utterance_seconds}
+                    {" s"} · beam: {voiceSettings.active.beam_size}
+                  </p>
+                  <p>
+                    Kolejność profili:{" "}
+                    {voiceSettings.profiles
+                      .map(
+                        (profile) =>
+                          `${profile.model} (${profile.device}/${profile.compute_type})`,
+                      )
+                      .join(" → ")}
+                  </p>
+                </div>
+              </details>
+            </>
+          )}
+          {voiceError ? (
+            <p className="memory-settings__error">{voiceError}</p>
+          ) : null}
         </section>
         <section
           className="memory-settings model-settings"

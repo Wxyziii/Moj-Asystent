@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "audio": "local/normalna-rozmowa.wav",
+      "reference": "To jest zwykłe zdanie po polsku"
+    },
+    {
+      "audio": "local/krotkie-slowo.wav",
+      "reference": "siekiera"
+    },
+    {
+      "audio": "local/techniczne.wav",
+      "reference": "Otwórz GitHub i sprawdź projekt Tauri"
+    }
+  ]
+}

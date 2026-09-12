@@ -85,6 +85,12 @@ from .protocol import (
 )
 from .routines import RoutineCreateRequest, RoutineService, RoutineValidationError
 from .runtime import CoreRuntime
+from .stt import (
+    DEFAULT_POLISH_TECHNICAL_VOCABULARY,
+    SttRuntimeProfile,
+    SttRuntimeSelector,
+    SttVocabulary,
+)
 from .tools import ToolEngine, build_tool_engine
 from .tools.confirmations import ConfirmationRejected
 from .tools.models import ConfirmationDecision, ContextProviderArguments
@@ -210,6 +216,15 @@ class ModelSettingsRequest(StrictRequest):
         return self
 
 
+class VoiceSettingsRequest(StrictRequest):
+    vocabulary: tuple[str, ...] = Field(max_length=32)
+
+    @field_validator("vocabulary")
+    @classmethod
+    def validate_vocabulary(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return SttVocabulary(entries=value).entries
+
+
 class MemoryWriteRequest(StrictRequest):
     key: str = Field(min_length=1, max_length=96)
     value: str = Field(min_length=1, max_length=2_048)
@@ -305,6 +320,114 @@ def _stored_data_policy(store: SQLiteMemoryStore) -> DataPolicy:
     if record is not None and record.value in {"local_only", "cloud_allowed"}:
         return record.value
     return "local_only"
+
+
+def _stored_stt_vocabulary(store: SQLiteMemoryStore) -> SttVocabulary:
+    record = store.preference("stt_vocabulary")
+    if record is not None:
+        try:
+            return SttVocabulary.model_validate_json(record.value)
+        except ValueError:
+            pass
+    return SttVocabulary(entries=DEFAULT_POLISH_TECHNICAL_VOCABULARY)
+
+
+def _stt_profile(
+    config: AudioConfig,
+    *,
+    profile_id: str,
+    model: str,
+    device: Literal["cpu", "cuda"],
+    compute_type: Literal["int8", "int8_float16", "float16", "float32"],
+) -> SttRuntimeProfile:
+    return SttRuntimeProfile(
+        profile_id=profile_id,
+        model=model,
+        device=device,
+        compute_type=compute_type,
+        beam_size=config.stt_beam_size,
+        best_of=config.stt_best_of,
+        patience=config.stt_patience,
+        temperature=config.stt_temperature,
+        condition_on_previous_text=False,
+        no_speech_threshold=config.stt_no_speech_threshold,
+        log_probability_threshold=config.stt_log_probability_threshold,
+        compression_ratio_threshold=config.stt_compression_ratio_threshold,
+    )
+
+
+def _build_stt_selector(config: AudioConfig, vocabulary: SttVocabulary) -> SttRuntimeSelector:
+    profiles: list[SttRuntimeProfile] = []
+    if config.stt_preferred_enabled:
+        profiles.append(
+            _stt_profile(
+                config,
+                profile_id="preferred",
+                model=config.stt_preferred_model,
+                device=config.stt_preferred_device,
+                compute_type=config.stt_preferred_compute_type,
+            )
+        )
+    profiles.append(
+        _stt_profile(
+            config,
+            profile_id="configured_fallback",
+            model=config.stt_model,
+            device=config.stt_fallback_device,
+            compute_type=config.stt_fallback_compute_type,
+        )
+    )
+    compatibility = _stt_profile(
+        config,
+        profile_id="cpu_compatibility",
+        model="medium",
+        device="cpu",
+        compute_type="int8",
+    )
+    if not any(
+        (item.model, item.device, item.compute_type)
+        == (compatibility.model, compatibility.device, compatibility.compute_type)
+        for item in profiles
+    ):
+        profiles.append(compatibility)
+    return SttRuntimeSelector(
+        tuple(FasterWhisperPolishProvider(profile) for profile in profiles),
+        vocabulary=vocabulary,
+    )
+
+
+def _public_stt_model(model: str) -> str:
+    return model.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or "model lokalny"
+
+
+def _public_stt_profile(profile: SttRuntimeProfile) -> dict[str, object]:
+    return {
+        **profile.model_dump(mode="json", exclude={"model"}),
+        "model": _public_stt_model(profile.model),
+    }
+
+
+async def _voice_settings_payload(
+    selector: SttRuntimeSelector, config: AudioConfig
+) -> dict[str, object]:
+    status = await selector.status()
+    return {
+        "active": {
+            **_public_stt_profile(status.profile),
+            "status": status.state,
+            "detail": status.detail,
+            "fallback_active": status.fallback_active,
+            "fallback_reason": status.fallback_reason,
+        },
+        "profiles": [_public_stt_profile(profile) for profile in selector.profiles],
+        "vocabulary": list(selector.vocabulary.entries),
+        "vad": {
+            "pre_roll_ms": config.vad_pre_roll_ms,
+            "post_roll_ms": config.vad_post_roll_ms,
+            "trailing_silence_ms": config.trailing_silence_ms,
+            "maximum_utterance_seconds": config.maximum_utterance_seconds,
+        },
+    }
 
 
 def _build_model_router(
@@ -430,6 +553,10 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
     app.state.memory_store = memory_store
     configured_mode = _stored_model_mode(memory_store)
     configured_policy = _stored_data_policy(memory_store)
+    vocabulary = _stored_stt_vocabulary(memory_store)
+    stt_selector = app.state.stt_selector or _build_stt_selector(config, vocabulary)
+    stt_selector.set_vocabulary(vocabulary)
+    app.state.stt_selector = stt_selector
     router = app.state.model_router
     if router is None:
         injected_provider: LanguageModelProvider | None = app.state.language_model_provider
@@ -481,7 +608,7 @@ async def lifecycle(app: FastAPI) -> AsyncIterator[None]:
         config,
         wake_provider,
         SileroVadProvider(),
-        FasterWhisperPolishProvider(config.stt_model),
+        stt_selector,
         PiperPolishProvider(config.tts_voice_path),
         SoundDeviceMicrophone(config),
         conversation,
@@ -526,6 +653,7 @@ def create_app(
     memory_store: SQLiteMemoryStore | None = None,
     watcher_provider: WatcherObservationProvider | None = None,
     model_router: ModelRouter | None = None,
+    stt_selector: SttRuntimeSelector | None = None,
 ) -> FastAPI:
     resolved = settings or CoreSettings()
     app = FastAPI(title="Mój Asystent Core", version=PROTOCOL_VERSION, lifespan=lifecycle)
@@ -535,6 +663,7 @@ def create_app(
     app.state.tool_platform = tool_platform
     app.state.memory_store = memory_store
     app.state.watcher_provider = watcher_provider
+    app.state.stt_selector = stt_selector
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(ALLOWED_ORIGINS),
@@ -617,6 +746,38 @@ def create_app(
     async def cancel(_: Annotated[None, Depends(authorize)]) -> dict[str, str]:
         await app.state.audio.cancel()
         return {"status": "idle"}
+
+    @app.get("/voice/settings")
+    async def voice_settings(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        return await _voice_settings_payload(app.state.stt_selector, app.state.audio.config)
+
+    @app.patch("/voice/settings")
+    async def update_voice_settings(
+        request: VoiceSettingsRequest,
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        vocabulary = SttVocabulary(entries=request.vocabulary)
+        await memory_call(
+            app.state.memory_store.remember_preference,
+            "stt_vocabulary",
+            vocabulary.model_dump_json(),
+            source="settings",
+        )
+        app.state.stt_selector.set_vocabulary(vocabulary)
+        return await _voice_settings_payload(app.state.stt_selector, app.state.audio.config)
+
+    @app.get("/voice/diagnostics")
+    async def voice_diagnostics(
+        _: Annotated[None, Depends(authorize)],
+    ) -> dict[str, object]:
+        diagnostics = []
+        for item in app.state.stt_selector.diagnostics():
+            payload = item.model_dump(mode="json", exclude={"model"})
+            payload["model"] = _public_stt_model(item.model)
+            diagnostics.append(payload)
+        return {"diagnostics": diagnostics}
 
     @app.get("/model/status")
     async def model_status(
@@ -1266,7 +1427,8 @@ def create_app(
         finally:
             for child in children:
                 child.cancel()
-            await asyncio.gather(*children, return_exceptions=True)
+            # Keep fail-closed session cleanup before an await: TestClient and
+            # real server shutdown may cancel this task repeatedly.
             if queue is not None:
                 runtime.unsubscribe(queue)
             runtime.sessions.discard(task)
@@ -1274,6 +1436,7 @@ def create_app(
                 # A confirmation must never remain actionable when no trusted UI
                 # session can still display its exact target and consequences.
                 app.state.tool_engine.cancel_all_confirmations()
+            await asyncio.gather(*children, return_exceptions=True)
             with suppress(WebSocketDisconnect, RuntimeError, OSError, TimeoutError):
                 await asyncio.wait_for(websocket.close(code=close_code), 2.0)
 

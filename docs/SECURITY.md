@@ -194,6 +194,19 @@ V1 local-first.
 
 The desktop/core voice boundary additionally requires a per-launch random credential. Tauri passes it directly to the owned core process, and the core validates it before health responses, audio-control requests or WebSocket acceptance. Credentials are memory-only, omitted from logs and invalid after application restart. HTTP and WebSocket remain restricted to loopback hosts and known desktop origins, with strict payload-size and schema validation. This limits accidental cross-origin/local access; it does not defend against a malicious process with access to the same user's process memory.
 
+Voice v2 settings and diagnostics use that same authenticated loopback boundary.
+Vocabulary entries are normalized, length/count bounded and treated only as
+decoder hints. Diagnostic storage is capped in memory and excludes PCM and
+transcript content. Model status exposes a public model basename rather than a
+private filesystem path. Preferred and fallback STT models are local-only and
+are never downloaded by normal startup or benchmark execution.
+
+Whisper confidence signals are not authentication and are not treated as
+calibrated truth. A low-confidence voice request can only make authorization
+stricter: `write.safe` requires a single-use confirmation even when persistently
+allowed, while `sensitive` retains its existing mandatory confirmation. It can
+never make a denied or confirmation-required ToolEngine decision more permissive.
+
 The core removes both credentials from its process environment after startup and explicitly scrubs them from tool-launched child environments. Fixed application aliases resolve to absolute Windows system executables rather than relying on the working directory or `PATH`.
 
 Approved process restart binds PID, creation time, executable name and the resolved allowlisted image. Relaunch explicitly pins that verified executable even if the captured command line uses a different or relative first argument.

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import math
+import sys
 import threading
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -16,8 +18,10 @@ from .providers import (
     SpeechToTextResponse,
     TextToSpeechRequest,
     TextToSpeechResponse,
+    TranscriptionConfidence,
     TranscriptionSegment,
 )
+from .stt import SttProviderStatus, SttRuntimeProfile, SttStatusState
 
 
 def list_input_devices() -> list[dict[str, object]]:
@@ -248,75 +252,271 @@ class SileroVadProvider:
 class FasterWhisperPolishProvider:
     def __init__(
         self,
-        model_name: str,
+        profile: SttRuntimeProfile,
         *,
-        device: str = "cpu",
-        compute_type: str = "int8",
         model_factory: Callable[..., Any] | None = None,
     ) -> None:
-        self._model_name = model_name
-        self._device = device
-        self._compute_type = compute_type
+        self.profile = profile
         self._model: Any = None
         self._model_factory = model_factory
-        self._cancelled = threading.Event()
+        self._model_lock = threading.Lock()
+        self._inference_lock = threading.Lock()
+        self._generation_lock = threading.Lock()
+        self._generation = 0
+        self._hotwords: str | None = None
+        self._status = SttProviderStatus(profile=profile, state="loading")
+        self._load_failure_state: SttStatusState | None = None
+
+    def set_hotwords(self, hotwords: str | None) -> None:
+        self._hotwords = hotwords
+
+    def _runtime_issue(self) -> SttStatusState | None:
+        if self._model_factory is not None:
+            return None
+        if (
+            self.profile.device == "cuda"
+            and sys.platform == "win32"
+            and not _windows_cuda_runtime_available()
+        ):
+            return "cuda_unavailable"
+        try:
+            import ctranslate2
+
+            supported = ctranslate2.get_supported_compute_types(self.profile.device)
+        except Exception:
+            return "cuda_unavailable" if self.profile.device == "cuda" else "unavailable"
+        if self.profile.compute_type not in supported:
+            return "cuda_unavailable" if self.profile.device == "cuda" else "unavailable"
+        return None
+
+    def _model_available(self) -> bool:
+        if self._model is not None or self._model_factory is not None:
+            return True
+        if Path(self.profile.model).is_dir():
+            return True
+        try:
+            from faster_whisper.utils import download_model
+
+            download_model(self.profile.model, local_files_only=True)
+        except Exception:
+            return False
+        return True
+
+    async def status(self) -> SttProviderStatus:
+        if self._load_failure_state is not None:
+            return self._status
+        if self._model is not None:
+            return SttProviderStatus(profile=self.profile, state="ready")
+        issue = await asyncio.to_thread(self._runtime_issue)
+        if issue is not None:
+            self._status = SttProviderStatus(
+                profile=self.profile,
+                state=issue,
+                detail=(
+                    "CUDA lub wybrany typ obliczeń jest niedostępny."
+                    if issue == "cuda_unavailable"
+                    else "Środowisko STT jest niedostępne."
+                ),
+            )
+            return self._status
+        if not await asyncio.to_thread(self._model_available):
+            self._status = SttProviderStatus(
+                profile=self.profile,
+                state="missing_model",
+                detail="Model STT nie jest zainstalowany lokalnie.",
+            )
+            return self._status
+        self._status = SttProviderStatus(profile=self.profile, state="ready")
+        return self._status
 
     def _load(self) -> Any:
-        if self._model is None:
+        with self._model_lock:
+            if self._model is not None:
+                return self._model
+            issue = self._runtime_issue()
+            if issue is not None:
+                self._status = SttProviderStatus(profile=self.profile, state=issue)
+                raise ProviderUnavailableError("Configured STT runtime is unavailable")
             factory = self._model_factory
             if factory is None:
                 from faster_whisper import WhisperModel
 
                 factory = WhisperModel
-            self._model = factory(
-                self._model_name, device=self._device, compute_type=self._compute_type
-            )
+            self._status = SttProviderStatus(profile=self.profile, state="loading")
+            try:
+                self._model = factory(
+                    self.profile.model,
+                    device=self.profile.device,
+                    compute_type=self.profile.compute_type,
+                    local_files_only=True,
+                )
+            except Exception as error:
+                state = _stt_load_failure_state(
+                    self.profile,
+                    error,
+                    model_available=self._model_available(),
+                )
+                self._load_failure_state = state
+                self._status = SttProviderStatus(profile=self.profile, state=state)
+                raise ProviderUnavailableError(
+                    "Configured STT model could not be loaded"
+                ) from error
+            self._load_failure_state = None
+            self._status = SttProviderStatus(profile=self.profile, state="ready")
         return self._model
 
-    def _transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse:
+    def _next_generation(self) -> int:
+        with self._generation_lock:
+            self._generation += 1
+            return self._generation
+
+    def _is_current(self, generation: int) -> bool:
+        with self._generation_lock:
+            return generation == self._generation
+
+    def _transcribe(self, request: SpeechToTextRequest, generation: int) -> SpeechToTextResponse:
         import numpy as np
 
-        self._cancelled.clear()
-        samples = np.frombuffer(request.pcm_s16le, dtype=np.int16).astype(np.float32) / 32_768.0
-        segments, _info = self._load().transcribe(
-            samples,
-            language="pl",
-            task="transcribe",
-            beam_size=5,
-            vad_filter=False,
-            word_timestamps=False,
-        )
-        results: list[TranscriptionSegment] = []
-        for segment in segments:
-            if self._cancelled.is_set():
+        with self._inference_lock:
+            if not self._is_current(generation):
                 raise ProviderUnavailableError("Transcription cancelled")
-            text = str(segment.text).strip()
-            if text:
-                results.append(
-                    TranscriptionSegment(
-                        start_seconds=max(0, float(segment.start)),
-                        end_seconds=max(0, float(segment.end)),
-                        text=text,
-                        average_log_probability=float(segment.avg_logprob),
+            samples = np.frombuffer(request.pcm_s16le, dtype=np.int16).astype(np.float32) / 32_768.0
+            segments, _info = self._load().transcribe(
+                samples,
+                language="pl",
+                task="transcribe",
+                beam_size=self.profile.beam_size,
+                best_of=self.profile.best_of,
+                patience=self.profile.patience,
+                temperature=self.profile.temperature,
+                condition_on_previous_text=self.profile.condition_on_previous_text,
+                no_speech_threshold=self.profile.no_speech_threshold,
+                log_prob_threshold=self.profile.log_probability_threshold,
+                compression_ratio_threshold=self.profile.compression_ratio_threshold,
+                hotwords=self._hotwords,
+                vad_filter=False,
+                word_timestamps=False,
+            )
+            results: list[TranscriptionSegment] = []
+            for segment in segments:
+                if not self._is_current(generation):
+                    raise ProviderUnavailableError("Transcription cancelled")
+                text = str(segment.text).strip()
+                if text:
+                    results.append(
+                        TranscriptionSegment(
+                            start_seconds=max(0, float(segment.start)),
+                            end_seconds=max(0, float(segment.end)),
+                            text=text,
+                            average_log_probability=float(segment.avg_logprob),
+                            no_speech_probability=float(segment.no_speech_prob),
+                        )
                     )
-                )
-        transcript = " ".join(segment.text for segment in results).strip()
-        if not transcript:
-            raise ProviderUnavailableError("No Polish speech was transcribed")
-        return SpeechToTextResponse(
-            transcript=transcript,
-            language="pl",
-            duration_ms=request.duration_ms,
-            segments=tuple(results),
-        )
+            transcript = " ".join(segment.text for segment in results).strip()
+            if not transcript:
+                raise ProviderUnavailableError("No Polish speech was transcribed")
+            return SpeechToTextResponse(
+                transcript=transcript,
+                language="pl",
+                duration_ms=request.duration_ms,
+                segments=tuple(results),
+                confidence=_transcription_confidence(results),
+            )
 
     async def transcribe(self, request: SpeechToTextRequest) -> SpeechToTextResponse:
         if request.language != "pl":
             raise ValueError("V1 transcription language must be Polish")
-        return await asyncio.to_thread(self._transcribe, request)
+        generation = self._next_generation()
+        try:
+            return await asyncio.to_thread(self._transcribe, request, generation)
+        except asyncio.CancelledError:
+            raise
+        except ProviderUnavailableError:
+            raise
+        except Exception as error:
+            state: SttStatusState = (
+                "cuda_unavailable"
+                if _is_cuda_runtime_failure(self.profile, error)
+                else "transcription_failure"
+            )
+            if state == "cuda_unavailable":
+                self._load_failure_state = state
+            self._status = SttProviderStatus(
+                profile=self.profile,
+                state=state,
+                detail="Lokalna inferencja STT nie powiodła się.",
+            )
+            raise ProviderUnavailableError("Local STT inference failed") from error
 
     async def cancel(self) -> None:
-        self._cancelled.set()
+        self._next_generation()
+
+    async def close(self) -> None:
+        await self.cancel()
+
+        def close_model() -> None:
+            with self._inference_lock, self._model_lock:
+                self._model = None
+
+        await asyncio.to_thread(close_model)
+        self._load_failure_state = None
+        self._status = SttProviderStatus(profile=self.profile, state="loading")
+
+
+def _transcription_confidence(
+    segments: list[TranscriptionSegment],
+) -> TranscriptionConfidence:
+    log_values = [
+        value.average_log_probability
+        for value in segments
+        if value.average_log_probability is not None
+    ]
+    silence_values = [
+        value.no_speech_probability for value in segments if value.no_speech_probability is not None
+    ]
+    if not log_values and not silence_values:
+        return TranscriptionConfidence()
+    average_log = sum(log_values) / len(log_values) if log_values else None
+    maximum_silence = max(silence_values) if silence_values else None
+    reasons: list[str] = []
+    if average_log is not None and average_log < -1.0:
+        reasons.append("low_average_log_probability")
+    if maximum_silence is not None and maximum_silence >= 0.7:
+        reasons.append("high_no_speech_probability")
+    if reasons:
+        return TranscriptionConfidence(level="low", reasons=tuple(reasons))
+    if (
+        average_log is not None
+        and average_log >= -0.45
+        and (maximum_silence is None or maximum_silence <= 0.35)
+    ):
+        return TranscriptionConfidence(level="high", reasons=())
+    return TranscriptionConfidence(level="medium", reasons=("mixed_whisper_signals",))
+
+
+def _stt_load_failure_state(
+    profile: SttRuntimeProfile, error: Exception, *, model_available: bool
+) -> SttStatusState:
+    if _is_cuda_runtime_failure(profile, error):
+        return "cuda_unavailable"
+    if not model_available:
+        return "missing_model"
+    return "unavailable"
+
+
+def _is_cuda_runtime_failure(profile: SttRuntimeProfile, error: Exception) -> bool:
+    detail = str(error).casefold()
+    cuda_markers = ("cuda", "cublas", "cudnn", "nvrtc", "nvcuda")
+    return profile.device == "cuda" and any(marker in detail for marker in cuda_markers)
+
+
+def _windows_cuda_runtime_available() -> bool:
+    for library in ("cublas64_12.dll", "cudnn64_9.dll"):
+        try:
+            ctypes.CDLL(library)
+        except OSError:
+            return False
+    return True
 
 
 class PiperPolishProvider:

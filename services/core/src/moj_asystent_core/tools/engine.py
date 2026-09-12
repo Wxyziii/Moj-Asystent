@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TypeVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
@@ -181,6 +181,7 @@ class ToolEngine:
         call_id: UUID,
         tool_name: str,
         arguments: dict[str, JsonValue],
+        speech_confidence: Literal["high", "medium", "low", "unknown"] | None = None,
     ) -> ToolExecutionResult:
         if _valid_tool_name(tool_name):
             self.events.publish_tool_status(operation_id, call_id, tool_name, "requested")
@@ -215,6 +216,14 @@ class ToolEngine:
                 ),
             )
 
+        confidence_forced_confirmation = (
+            speech_confidence == "low"
+            and definition.permission is PermissionLevel.WRITE_SAFE
+            and permission is PermissionDecision.AUTO
+        )
+        if confidence_forced_confirmation:
+            permission = PermissionDecision.CONFIRM
+
         if permission is PermissionDecision.CONFIRM:
             if not self.events.can_request_confirmation():
                 return self._publish_result(
@@ -237,7 +246,9 @@ class ToolEngine:
                 target=presentation.target,
                 details=presentation.details,
                 risk=presentation.risk,
-                persistent_allowed=definition.persistent_approval,
+                persistent_allowed=(
+                    definition.persistent_approval and not confidence_forced_confirmation
+                ),
             )
             self.events.publish_tool_status(
                 operation_id, call_id, definition.name, ToolStatus.CONFIRMATION_REQUIRED.value

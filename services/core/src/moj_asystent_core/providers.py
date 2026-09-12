@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,11 +30,18 @@ class ProviderModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+TranscriptionConfidenceLevel = Literal["high", "medium", "low", "unknown"]
+
+
 class SpeechToTextRequest(ProviderModel):
     pcm_s16le: bytes
     sample_rate: int = Field(ge=8_000, le=48_000)
     language: Literal["pl"]
     duration_ms: int = Field(gt=0, le=120_000)
+    vad_speech_start_ms: int = Field(default=0, ge=0, le=120_000)
+    vad_speech_end_ms: int | None = Field(default=None, ge=0, le=120_000)
+    pre_roll_ms: int = Field(default=0, ge=0, le=2_000)
+    post_roll_ms: int = Field(default=0, ge=0, le=1_500)
 
 
 class TranscriptionSegment(ProviderModel):
@@ -42,6 +49,16 @@ class TranscriptionSegment(ProviderModel):
     end_seconds: float = Field(ge=0)
     text: str = Field(min_length=1, max_length=4_096)
     average_log_probability: float | None = None
+    no_speech_probability: float | None = Field(default=None, ge=0, le=1)
+
+
+class TranscriptionConfidence(ProviderModel):
+    """A conservative quality signal, not a calibrated probability."""
+
+    level: TranscriptionConfidenceLevel = "unknown"
+    reasons: tuple[Annotated[str, Field(min_length=1, max_length=96)], ...] = Field(
+        default=(), max_length=4
+    )
 
 
 class SpeechToTextResponse(ProviderModel):
@@ -49,6 +66,7 @@ class SpeechToTextResponse(ProviderModel):
     language: Literal["pl"]
     duration_ms: int = Field(gt=0, le=120_000)
     segments: tuple[TranscriptionSegment, ...]
+    confidence: TranscriptionConfidence = Field(default_factory=TranscriptionConfidence)
 
 
 class TextToSpeechRequest(ProviderModel):

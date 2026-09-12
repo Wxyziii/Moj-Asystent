@@ -64,9 +64,13 @@ Automated/state:
 
 - sleep -> wake -> listen;
 - VAD end-of-utterance;
+- exact bounded pre-roll/post-roll and maximum utterance buffer;
 - silence timeout;
 - follow-up timeout;
 - cancel during STT/TTS;
+- deterministic CUDA selection, CPU fallback and missing CUDA/model handling;
+- vocabulary validation/serialization and transcript-free diagnostic bounds;
+- low-confidence voice requests cannot reuse approval for state-changing tools;
 - microphone unavailable/reconnect.
 
 Manual/evaluation dataset:
@@ -116,6 +120,22 @@ so Quality, Deep, cloud, high-load behavior and restart preference persistence
 have automated fake-provider coverage but still require the manual model-tier
 matrix before release. The complete canonical V1 flow below was not rerun as
 part of this implementation pass.
+
+Milestone 13 adds automated coverage for Turbo CUDA/CPU selection, provider
+failure fallback, provider-generation cancellation, VAD edge padding and buffer
+limits, local vocabulary persistence, authenticated settings, privacy-safe
+diagnostics, no normal PCM persistence, benchmark WER/path validation and
+low-confidence ToolEngine hardening. The implementation did not download a
+model or record microphone audio. Real `large-v3-turbo` CUDA accuracy, latency,
+short-word recognition, mixed technical speech, follow-up transcription and
+forced fallback still require the documented target-hardware pass; no accuracy
+improvement is claimed from automated tests alone. Read-only target inspection
+confirmed an RTX 3070 (8 GiB), cached Medium and `large-v3` models, and no cached
+`large-v3-turbo`. A one-second in-memory silence probe reached the real
+CTranslate2 CUDA path and found `cublas64_12.dll` unavailable; after the status
+regression fix, the provider reports `cuda_unavailable` and the selector reports
+Medium CPU fallback instead of claiming GPU readiness. No microphone was opened
+and no audio file was written during this probe.
 
 ## Model evaluation
 

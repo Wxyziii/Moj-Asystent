@@ -172,6 +172,23 @@ Initial split:
 
 Benchmark before hardcoding exact model sizes/settings.
 
+## 2026-09-12 — Deterministic local Voice v2 routing
+
+Decision: supersede the STT part of the initial CPU-first split on capable target
+hardware. Prefer `large-v3-turbo` on CUDA with `int8_float16`, then a configured
+local fallback and finally Medium CPU `int8`. Selection is deterministic and
+based only on local runtime/model availability. Every model is opened with
+local-files-only behavior; installation remains an explicit user/setup action.
+
+The UI reads authenticated status and manages a local vocabulary but contains no
+CUDA selection logic. Transcript confidence is an intentionally conservative
+internal safety hint: low confidence can require a fresh ToolEngine confirmation
+for a state-changing action and can never grant permission. Diagnostics remain a
+bounded in-memory metadata buffer without audio or transcript content.
+
+These controls fit the authenticated HTTP settings boundary, so no new desktop
+event capability is required and Protocol 1.4 remains exact and unchanged.
+
 ## 2026-09-09 — Structured context before screenshots
 
 Decision: screen awareness prioritizes structured context.

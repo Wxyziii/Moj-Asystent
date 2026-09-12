@@ -30,6 +30,7 @@ from .model_routing import (
     explicit_tier_override,
 )
 from .protocol import ModelStatusChangedPayload
+from .providers import TranscriptionConfidenceLevel
 from .runtime import CoreRuntime
 from .tools.engine import ToolEngine
 from .tools.models import JsonValue
@@ -79,6 +80,7 @@ class LocalConversationService:
         *,
         mode: Literal["voice", "text"],
         visual: VisionCaptureOutcome | None = None,
+        transcription_confidence: TranscriptionConfidenceLevel | None = None,
     ) -> ConversationReply:
         async with self._lock:
             requires_image = bool(
@@ -120,7 +122,13 @@ class LocalConversationService:
                 fallback_reason=route.fallback_reason,
             )
             try:
-                answer = await self._run_model_loop(operation_id, user_text, visual, route)
+                answer = await self._run_model_loop(
+                    operation_id,
+                    user_text,
+                    visual,
+                    route,
+                    transcription_confidence=transcription_confidence,
+                )
                 if not answer:
                     raise ProviderProtocolError("Local model returned an empty response")
                 spoken = concise_spoken_response(answer)
@@ -182,6 +190,8 @@ class LocalConversationService:
         user_text: str,
         visual: VisionCaptureOutcome | None,
         route: SelectedModel,
+        *,
+        transcription_confidence: TranscriptionConfidenceLevel | None,
     ) -> str:
         messages = list(self._context.messages_for(user_text))
         if self._memory_store is not None and route.local:
@@ -217,6 +227,7 @@ class LocalConversationService:
                 call_id=call.call_id,
                 tool_name=call.name,
                 arguments=call.arguments,
+                speech_confidence=transcription_confidence,
             )
             messages.append(_tool_message(call.name, result.model_dump(mode="json")))
             next_images = self._tool_engine.take_images(operation_id, call.call_id)
@@ -232,6 +243,7 @@ class LocalConversationService:
                 call_id=call.call_id,
                 tool_name=call.name,
                 arguments=call.arguments,
+                speech_confidence=transcription_confidence,
             )
             messages.append(_tool_message(call.name, result.model_dump(mode="json")))
         for iteration in range(MAX_TOOL_ITERATIONS + 1):
@@ -267,6 +279,7 @@ class LocalConversationService:
                     call_id=call.call_id,
                     tool_name=call.name,
                     arguments=call.arguments,
+                    speech_confidence=transcription_confidence,
                 )
                 serialized_result = result.model_dump(mode="json")
                 messages.append(_tool_message(call.name, serialized_result))
@@ -289,6 +302,7 @@ class LocalConversationService:
                         call_id=vision_call.call_id,
                         tool_name=vision_call.name,
                         arguments=vision_call.arguments,
+                        speech_confidence=transcription_confidence,
                     )
                     messages.append(
                         _tool_message(vision_call.name, vision_result.model_dump(mode="json"))

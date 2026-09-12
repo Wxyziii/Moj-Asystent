@@ -238,6 +238,40 @@ async def test_write_safe_follows_policy_and_can_persist_allow(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_low_confidence_voice_forces_confirmation_for_allowed_write_safe_tool(
+    tmp_path: Path,
+) -> None:
+    engine, events = engine_for(tmp_path, PermissionLevel.WRITE_SAFE, persistent=True)
+    engine.policy.set_preference("test_tool", ToolPreference.ALLOW)
+    operation = uuid4()
+    task = asyncio.create_task(
+        engine.execute(
+            operation_id=operation,
+            call_id=uuid4(),
+            tool_name="test_tool",
+            arguments={"value": 9},
+            speech_confidence="low",
+        )
+    )
+    await asyncio.sleep(0)
+
+    assert task.done() is False
+    assert len(events.confirmations) == 1
+    assert events.confirmations[0].persistent_allowed is False
+    engine.resolve_confirmation(
+        ConfirmationDecision(
+            confirmation_id=events.confirmations[0].confirmation_id,
+            operation_id=str(operation),
+            call_id=str(events.confirmations[0].call_id),
+            tool_name="test_tool",
+            arguments_digest=events.confirmations[0].arguments_digest,
+            decision="allow",
+        )
+    )
+    assert (await task).status is ToolStatus.SUCCESS
+
+
+@pytest.mark.asyncio
 async def test_failed_persistent_policy_write_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -6,6 +6,24 @@ All notable project changes are tracked here.
 
 ### Added
 
+- Milestone 13 Voice v2: deterministic preferred `large-v3-turbo` CUDA
+  `int8_float16` transcription with truthful configured/Medium CPU fallback and
+  local-files-only model loading.
+- Bounded RAM-only Silero VAD pre/post roll, serialized generation-aware
+  faster-whisper cancellation and explicit conservative transcription
+  confidence.
+- Authenticated Settings → Voice status and validated local vocabulary/hotword
+  management, plus a 64-entry transcript-free diagnostic ring.
+- Low-confidence voice hardening that requires one-time confirmation before
+  `write.safe` actions without weakening existing sensitive/deny policy.
+- Opt-in gitignored Polish STT benchmark with WER, latency, RTF, failures and
+  available process/GPU memory metrics across Medium CPU and Turbo CUDA modes.
+- Fixed eager and lazy CUDA library failures so missing `cublas`/`cuDNN` remain
+  visibly `cuda_unavailable` and deterministically fall back instead of reverting
+  to a false GPU-ready status.
+- Hardened WebSocket cancellation cleanup so the final trusted UI disconnect
+  always invalidates unseen tool confirmations before any cancellable await.
+
 - Milestone 12 provider-neutral hardware-aware model routing with persistent
   Private, Fast, Quality, Deep and Auto modes plus one-request Polish escalation.
 - Fast `qwen3.5:4b` and optional Quality `qwen3.5:9b` through loopback Ollama,

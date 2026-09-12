@@ -21,13 +21,13 @@ Microphone
    -> speakers
 ```
 
-## Milestone 3 implementation
+## Implemented audio architecture
 
 The core owns a cancellable asyncio audio pipeline. `sounddevice` supplies bounded 16-bit mono PCM frames through a thread-safe ingress; openWakeWord runs only in idle, Silero VAD bounds utterances, faster-whisper is forced to `language="pl"`, and Piper plays a configured `pl_PL` ONNX voice outside the event loop. Milestone 5 routes the final Polish transcript through the local conversation provider, streams the full answer to the overlay and gives Piper a bounded two-sentence spoken variant.
 
-Audio bytes and VAD buffers remain in RAM and are cleared after completion, cancellation, failure or shutdown. Provider work is tagged with a generation and operation UUID, so results finishing after cancellation cannot publish events or mutate the authoritative state. Wake processing is suppressed during TTS. Microphone failures retry after a bounded delay, while the shortcut and text overlay remain available.
+Audio bytes and VAD buffers remain in RAM and are cleared after completion, cancellation, failure or shutdown. Provider work is tagged with a generation and operation UUID, so results finishing after cancellation cannot publish events or mutate the authoritative state. Milestone 13 also serializes inference inside each faster-whisper runtime and invalidates the provider generation on cancellation, preventing a new transcription from reactivating stale work. Wake processing is suppressed during TTS. Microphone failures retry after a bounded delay, while the shortcut and text overlay remain available.
 
-Configuration uses `MOJ_ASYSTENT_MICROPHONE_DEVICE`, `MOJ_ASYSTENT_SAMPLE_RATE`, `MOJ_ASYSTENT_WAKE_SENSITIVITY`, `MOJ_ASYSTENT_VAD_START_THRESHOLD`, `MOJ_ASYSTENT_VAD_END_THRESHOLD`, `MOJ_ASYSTENT_MAX_UTTERANCE_SECONDS`, `MOJ_ASYSTENT_STT_MODEL`, `MOJ_ASYSTENT_TTS_VOICE_PATH`, `MOJ_ASYSTENT_WAKE_MODEL_PATH`, `MOJ_ASYSTENT_FOLLOW_UP_SECONDS` and `MOJ_ASYSTENT_VOICE_RESPONSES`. If installed, the default Polish Piper voice is discovered under `%LOCALAPPDATA%/Moj-Asystent/models/piper/pl_PL-gosia-medium.onnx`; model downloads are explicit setup actions and remain outside the repository.
+Configuration uses `MOJ_ASYSTENT_MICROPHONE_DEVICE`, `MOJ_ASYSTENT_SAMPLE_RATE`, `MOJ_ASYSTENT_WAKE_SENSITIVITY`, `MOJ_ASYSTENT_VAD_START_THRESHOLD`, `MOJ_ASYSTENT_VAD_END_THRESHOLD`, `MOJ_ASYSTENT_VAD_PRE_ROLL_MS`, `MOJ_ASYSTENT_VAD_POST_ROLL_MS`, `MOJ_ASYSTENT_VAD_TRAILING_SILENCE_MS`, `MOJ_ASYSTENT_MAX_UTTERANCE_SECONDS`, `MOJ_ASYSTENT_STT_MODEL`, `MOJ_ASYSTENT_STT_FALLBACK_DEVICE`, `MOJ_ASYSTENT_STT_FALLBACK_COMPUTE_TYPE`, `MOJ_ASYSTENT_STT_PREFERRED_ENABLED`, `MOJ_ASYSTENT_STT_PREFERRED_MODEL`, `MOJ_ASYSTENT_STT_PREFERRED_DEVICE`, `MOJ_ASYSTENT_STT_PREFERRED_COMPUTE_TYPE`, the bounded `MOJ_ASYSTENT_STT_*` decoding parameters, `MOJ_ASYSTENT_TTS_VOICE_PATH`, `MOJ_ASYSTENT_WAKE_MODEL_PATH`, `MOJ_ASYSTENT_FOLLOW_UP_SECONDS` and `MOJ_ASYSTENT_VOICE_RESPONSES`. If installed, the default Polish Piper voice is discovered under `%LOCALAPPDATA%/Moj-Asystent/models/piper/pl_PL-gosia-medium.onnx`; model downloads are explicit setup actions and remain outside the repository.
 
 ## Milestone 4 custom wake name
 
@@ -93,17 +93,31 @@ SLEEPING
 
 ## STT
 
-Initial implementation:
+Milestone 13 uses a deterministic ordered selector behind the existing STT
+provider abstraction:
 
-- faster-whisper Medium by default (override with `MOJ_ASYSTENT_STT_MODEL=small` on lower-memory machines);
-- Polish forced;
-- CPU INT8 first;
-- benchmark Whisper Small and Medium;
-- keep GPU available primarily for the LLM.
+1. preferred `large-v3-turbo`, CUDA, `int8_float16`;
+2. configured local fallback (`medium`, CPU, `int8` by default);
+3. an explicit `medium` CPU `int8` compatibility profile when the configured
+   fallback differs.
+
+Every profile forces `language="pl"`, uses bounded decoding parameters and
+disables Whisper's internal VAD because Silero owns the speech boundary. The
+selector checks device/compute compatibility, required Windows CUDA 12/cuDNN 9
+libraries and local model availability, then reports the actual active profile
+and explains fallback. Lazy CUDA failures during segment iteration are also
+classified and retained instead of reverting to a false `ready` state. Model
+construction uses `local_files_only`; missing large models are never downloaded
+implicitly.
+
+The preferred CUDA profile is allowed to share the GPU with the model router,
+but runtime selection is independent and deterministic. Resource contention and
+quality must be measured on the target machine using the local benchmark rather
+than inferred from model size.
 
 ## Polish vocabulary hints
 
-Maintain a configurable technical vocabulary list such as:
+The core starts with a reviewable technical vocabulary such as:
 
 - GitHub
 - Git
@@ -118,11 +132,19 @@ Maintain a configurable technical vocabulary list such as:
 - Docker
 - localhost
 
-Corrections must be conservative: do not replace uncertain ordinary Polish words simply because a technical term exists in the dictionary.
+The authenticated Settings → Voice view can add or remove at most 32 normalized,
+64-character entries. The list is persisted locally in SQLite and passed to
+faster-whisper through its `hotwords` input. It is a decoder hint, not a
+post-transcription replacement rule: ordinary Polish words are never rewritten
+solely because a similar vocabulary entry exists. No LLM correction pass is run.
 
 ## VAD
 
-Silero VAD determines speech boundaries.
+Silero VAD determines speech boundaries. The pipeline retains a bounded 240 ms
+pre-roll by default and keeps up to 240 ms of detected trailing audio after the
+speech endpoint. These values are validated, memory-only and included in the
+maximum utterance buffer calculation, protecting short beginnings/endings
+without allowing unbounded rolling capture.
 
 Parameters should be configurable and calibrated for:
 
@@ -130,6 +152,31 @@ Parameters should be configurable and calibrated for:
 - typical speaking distance;
 - room noise;
 - keyboard/fan noise.
+
+## Confidence and diagnostics
+
+Whisper segment signals are not treated as calibrated probabilities. The core
+derives only a conservative `high` / `medium` / `low` / `unknown` indicator from
+average log probability and no-speech probability. A clearly low-confidence
+voice request cannot use an existing persistent approval to run `write.safe`;
+it must receive a one-time confirmation. Sensitive tools still require their
+normal exact confirmation, read-only tools are unchanged, and ToolEngine remains
+the sole authorization authority.
+
+The selector keeps only the latest 64 diagnostic records in RAM. Records contain
+duration, VAD boundaries and padding, latency/RTF, public model name,
+device/compute type, aggregate segment signals, confidence, outcome and a
+classified fallback/failure reason. They contain neither PCM nor transcript text
+and are exposed only through the authenticated loopback API.
+
+## Benchmark
+
+`benchmarks/stt/` documents the opt-in local corpus format and the
+`moj-asystent-stt-benchmark` command. It compares Medium CPU `int8` with Turbo
+CUDA `int8_float16` and `float16`, producing per-sample transcription/WER plus
+aggregate latency, RTF, failure and memory measurements. Audio, local manifests
+and result files are gitignored because reports can contain private speech text;
+the harness validates relative PCM16 mono WAV paths and never downloads models.
 
 ## TTS
 

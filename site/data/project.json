@@ -3,7 +3,7 @@
     "name": "Mój Asystent",
     "tagline": "Polski, lokalny asystent AI dla Windows",
     "stage": "V1 release-gate validation",
-    "status": "Milestone 12 complete — manual V1 validation pending",
+    "status": "Milestone 13 complete — Voice v2 manual validation pending",
     "updated": "2026-09-12"
   },
   "principles": [
@@ -20,7 +20,7 @@
     { "label": "Main AI", "value": "Qwen3.5 4B via Ollama" },
     {
       "label": "Voice",
-      "value": "openWakeWord · Silero · faster-whisper · Piper"
+      "value": "openWakeWord · Silero · faster-whisper Turbo/CPU · Piper"
     },
     { "label": "Context", "value": "Windows UI Automation + selective vision" },
     { "label": "Memory", "value": "SQLite" }
@@ -103,9 +103,25 @@
       "name": "Deep model routing",
       "status": "done",
       "description": "Hardware-aware Fast/Quality/Deep routing, optional hybrid llama.cpp and explicit cloud opt-in."
+    },
+    {
+      "id": 13,
+      "name": "Voice v2",
+      "status": "done",
+      "description": "Deterministic Turbo CUDA/CPU Polish STT, speech-edge buffering, local vocabulary, safe diagnostics and benchmark tooling."
     }
   ],
   "changelog": [
+    {
+      "date": "2026-09-12",
+      "title": "Milestone 13: high-accuracy Polish STT foundation",
+      "items": [
+        "Added preferred local large-v3-turbo CUDA int8_float16 transcription with truthful deterministic CPU fallback and no implicit model downloads.",
+        "Added bounded RAM-only VAD pre/post roll, generation-aware cancellation and transcript-free runtime diagnostics.",
+        "Added authenticated Polish Voice settings with a validated local vocabulary and conservative hotword hints.",
+        "Added low-confidence ToolEngine confirmation hardening and an opt-in gitignored WER/latency/RTF benchmark; target inspection correctly selected CPU fallback because Turbo and a required CUDA DLL are not installed."
+      ]
+    },
     {
       "date": "2026-09-12",
       "title": "Milestone 12: hardware-aware model routing",

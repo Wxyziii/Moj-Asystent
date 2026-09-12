@@ -405,6 +405,32 @@ Simple commands remain fast while difficult analysis can escalate without forcin
 
 ---
 
+# Phase 13 — Voice v2 / high-accuracy Polish STT
+
+## Build
+
+- configurable faster-whisper runtime profiles with preferred
+  `large-v3-turbo` CUDA `int8_float16` and CPU fallback;
+- deterministic availability/fallback reporting with no implicit model
+  download;
+- bounded RAM-only VAD pre-roll and post-roll;
+- local, reviewable vocabulary/hotword settings;
+- bounded transcript-free STT diagnostics and conservative confidence;
+- one-time confirmation hardening for low-confidence state-changing speech;
+- opt-in local Polish WER/latency/RTF benchmark across CPU and CUDA profiles;
+- restrained Settings → Voice runtime and vocabulary controls.
+
+## Exit criteria
+
+The existing wake/follow-up pipeline can select the best available configured
+local Polish STT profile without lying about fallback, preserve speech edges,
+cancel stale inference, expose privacy-safe status, and keep low-confidence
+actions behind ToolEngine confirmation. Automated tests cover the selector,
+boundaries, settings and safety; target-hardware accuracy remains a measured
+release-gate item rather than an assumed result.
+
+---
+
 # V1 completion definition
 
 V1 is complete when this interaction is reliable:

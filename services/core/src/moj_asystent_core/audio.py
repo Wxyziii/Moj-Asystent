@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 import os
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import Enum
@@ -20,6 +21,7 @@ from .providers import (
     SpeechToTextRequest,
     TextToSpeechProvider,
     TextToSpeechRequest,
+    TranscriptionConfidenceLevel,
     VoiceActivityProvider,
     WakeWordProvider,
 )
@@ -34,7 +36,12 @@ if TYPE_CHECKING:
 
 class ConversationResponder(Protocol):
     async def respond(
-        self, operation_id: UUID, user_text: str, *, mode: Literal["voice", "text"]
+        self,
+        operation_id: UUID,
+        user_text: str,
+        *,
+        mode: Literal["voice", "text"],
+        transcription_confidence: TranscriptionConfidenceLevel | None = None,
     ) -> ConversationReply: ...
 
 
@@ -57,8 +64,25 @@ class AudioConfig(BaseModel):
     vad_end_threshold: float = Field(default=0.35, ge=0, le=1)
     min_speech_ms: int = Field(default=160, ge=20, le=5_000)
     trailing_silence_ms: int = Field(default=560, ge=40, le=3_000)
+    vad_pre_roll_ms: int = Field(default=240, ge=0, le=2_000)
+    vad_post_roll_ms: int = Field(default=240, ge=0, le=1_500)
     maximum_utterance_seconds: float = Field(default=30, gt=0, le=120)
     stt_model: str = Field(default="medium", min_length=1, max_length=128)
+    stt_fallback_device: Literal["cpu", "cuda"] = "cpu"
+    stt_fallback_compute_type: Literal["int8", "int8_float16", "float16", "float32"] = "int8"
+    stt_preferred_enabled: bool = True
+    stt_preferred_model: str = Field(default="large-v3-turbo", min_length=1, max_length=256)
+    stt_preferred_device: Literal["cpu", "cuda"] = "cuda"
+    stt_preferred_compute_type: Literal["int8", "int8_float16", "float16", "float32"] = (
+        "int8_float16"
+    )
+    stt_beam_size: int = Field(default=5, ge=1, le=10)
+    stt_best_of: int = Field(default=5, ge=1, le=10)
+    stt_patience: float = Field(default=1.0, ge=0.1, le=3.0)
+    stt_temperature: float = Field(default=0.0, ge=0, le=1)
+    stt_no_speech_threshold: float = Field(default=0.6, ge=0, le=1)
+    stt_log_probability_threshold: float = Field(default=-1.0, ge=-10, le=0)
+    stt_compression_ratio_threshold: float = Field(default=2.4, ge=1, le=10)
     tts_voice_path: str | None = Field(default_factory=_default_piper_voice)
     wake_model_path: str | None = None
     development_wake_model: str = Field(default="alexa", min_length=1, max_length=64)
@@ -77,6 +101,11 @@ class AudioConfig(BaseModel):
         for variable, field_name in {
             "MOJ_ASYSTENT_MICROPHONE_DEVICE": "microphone_device",
             "MOJ_ASYSTENT_STT_MODEL": "stt_model",
+            "MOJ_ASYSTENT_STT_FALLBACK_DEVICE": "stt_fallback_device",
+            "MOJ_ASYSTENT_STT_FALLBACK_COMPUTE_TYPE": "stt_fallback_compute_type",
+            "MOJ_ASYSTENT_STT_PREFERRED_MODEL": "stt_preferred_model",
+            "MOJ_ASYSTENT_STT_PREFERRED_DEVICE": "stt_preferred_device",
+            "MOJ_ASYSTENT_STT_PREFERRED_COMPUTE_TYPE": "stt_preferred_compute_type",
             "MOJ_ASYSTENT_TTS_VOICE_PATH": "tts_voice_path",
             "MOJ_ASYSTENT_WAKE_MODEL_PATH": "wake_model_path",
             "MOJ_ASYSTENT_DEVELOPMENT_WAKE_MODEL": "development_wake_model",
@@ -88,13 +117,25 @@ class AudioConfig(BaseModel):
             "MOJ_ASYSTENT_WAKE_SENSITIVITY": "wake_sensitivity",
             "MOJ_ASYSTENT_VAD_START_THRESHOLD": "vad_start_threshold",
             "MOJ_ASYSTENT_VAD_END_THRESHOLD": "vad_end_threshold",
+            "MOJ_ASYSTENT_VAD_PRE_ROLL_MS": "vad_pre_roll_ms",
+            "MOJ_ASYSTENT_VAD_POST_ROLL_MS": "vad_post_roll_ms",
+            "MOJ_ASYSTENT_VAD_TRAILING_SILENCE_MS": "trailing_silence_ms",
             "MOJ_ASYSTENT_MAX_UTTERANCE_SECONDS": "maximum_utterance_seconds",
             "MOJ_ASYSTENT_FOLLOW_UP_SECONDS": "follow_up_timeout_seconds",
+            "MOJ_ASYSTENT_STT_BEAM_SIZE": "stt_beam_size",
+            "MOJ_ASYSTENT_STT_BEST_OF": "stt_best_of",
+            "MOJ_ASYSTENT_STT_PATIENCE": "stt_patience",
+            "MOJ_ASYSTENT_STT_TEMPERATURE": "stt_temperature",
+            "MOJ_ASYSTENT_STT_NO_SPEECH_THRESHOLD": "stt_no_speech_threshold",
+            "MOJ_ASYSTENT_STT_LOG_PROBABILITY_THRESHOLD": "stt_log_probability_threshold",
+            "MOJ_ASYSTENT_STT_COMPRESSION_RATIO_THRESHOLD": ("stt_compression_ratio_threshold"),
         }.items():
             if value := os.environ.get(variable):
                 values[field_name] = value
         if value := os.environ.get("MOJ_ASYSTENT_VOICE_RESPONSES"):
             values["voice_responses_enabled"] = value.lower() in {"1", "true", "yes"}
+        if value := os.environ.get("MOJ_ASYSTENT_STT_PREFERRED_ENABLED"):
+            values["stt_preferred_enabled"] = value.lower() in {"1", "true", "yes"}
         return cls.model_validate(values)
 
 
@@ -177,6 +218,24 @@ class SpeechBoundaryDetector:
             return SpeechBoundary.COMPLETED
         return SpeechBoundary.NONE
 
+    @property
+    def trailing_silence_ms(self) -> float:
+        return self._silence_ms
+
+
+@dataclass(frozen=True)
+class CapturedUtterance:
+    pcm_s16le: bytes
+    sample_rate: int
+    speech_start_ms: int
+    speech_end_ms: int
+    pre_roll_ms: int
+    post_roll_ms: int
+
+    @property
+    def duration_ms(self) -> int:
+        return round(len(self.pcm_s16le) / 2 / self.sample_rate * 1_000)
+
 
 class AudioPipeline:
     def __init__(
@@ -200,6 +259,9 @@ class AudioPipeline:
         self._conversation = conversation
         self._detector = SpeechBoundaryDetector(config)
         self._capture = bytearray()
+        self._pre_roll: deque[PcmFrame] = deque()
+        self._pre_roll_duration_ms = 0.0
+        self._capture_pre_roll_ms = 0
         self._generation = 0
         self._operation_id: UUID | None = None
         self._capture_task: asyncio.Task[None] | None = None
@@ -298,20 +360,61 @@ class AudioPipeline:
             if state == "follow_up":
                 self._cancel_follow_up_timer()
                 self._runtime.transition("listening", expected_state="follow_up")
-            self._capture = bytearray(frame.pcm_s16le)
+            self._capture = bytearray(
+                b"".join(item.pcm_s16le for item in self._pre_roll) + frame.pcm_s16le
+            )
+            self._capture_pre_roll_ms = round(self._pre_roll_duration_ms)
+            self._clear_pre_roll()
+        elif not self._detector.active:
+            self._remember_pre_roll(frame)
         elif self._detector.active:
             self._capture.extend(frame.pcm_s16le)
+            maximum_bytes = round(
+                (self.config.vad_pre_roll_ms / 1_000 + self.config.maximum_utterance_seconds)
+                * frame.sample_rate
+                * 2
+            )
+            if len(self._capture) > maximum_bytes:
+                del self._capture[maximum_bytes:]
         if boundary is SpeechBoundary.COMPLETED:
-            audio = bytes(self._capture)
+            trailing_ms = round(self._detector.trailing_silence_ms)
+            post_roll_ms = min(trailing_ms, self.config.vad_post_roll_ms)
+            trim_ms = trailing_ms - post_roll_ms
+            trim_bytes = round(trim_ms / 1_000 * frame.sample_rate * 2)
+            if trim_bytes:
+                del self._capture[-min(trim_bytes, len(self._capture)) :]
+            duration_ms = round(len(self._capture) / 2 / frame.sample_rate * 1_000)
+            utterance = CapturedUtterance(
+                pcm_s16le=bytes(self._capture),
+                sample_rate=frame.sample_rate,
+                speech_start_ms=self._capture_pre_roll_ms,
+                speech_end_ms=max(self._capture_pre_roll_ms, duration_ms - post_roll_ms),
+                pre_roll_ms=self._capture_pre_roll_ms,
+                post_roll_ms=post_roll_ms,
+            )
             self._capture.clear()
+            self._capture_pre_roll_ms = 0
             self._detector.reset()
             self._vad.reset()
             generation = self._generation
             operation_id = uuid4()
             self._operation_id = operation_id
             self._processing_task = asyncio.create_task(
-                self._process(audio, frame.sample_rate, generation, operation_id)
+                self._process(utterance, generation, operation_id)
             )
+
+    def _remember_pre_roll(self, frame: PcmFrame) -> None:
+        if self.config.vad_pre_roll_ms == 0:
+            return
+        self._pre_roll.append(frame)
+        self._pre_roll_duration_ms += frame.duration_ms
+        while self._pre_roll and self._pre_roll_duration_ms > self.config.vad_pre_roll_ms:
+            removed = self._pre_roll.popleft()
+            self._pre_roll_duration_ms -= removed.duration_ms
+
+    def _clear_pre_roll(self) -> None:
+        self._pre_roll.clear()
+        self._pre_roll_duration_ms = 0.0
 
     async def _activate_from_wake(self) -> None:
         if self._runtime.state != "idle":
@@ -320,6 +423,7 @@ class AudioPipeline:
         self._wake.reset()
         self._vad.reset()
         self._detector.reset()
+        self._clear_pre_roll()
         self._runtime.transition("wake_detected", expected_state="idle")
         self._runtime.transition("listening", expected_state="wake_detected")
 
@@ -330,20 +434,25 @@ class AudioPipeline:
         self._generation += 1
         self._vad.reset()
         self._detector.reset()
+        self._clear_pre_roll()
         if self._runtime.state == "idle":
             self._runtime.transition("listening", expected_state="idle")
 
     async def _process(
-        self, audio: bytes, sample_rate: int, generation: int, operation_id: UUID
+        self, utterance: CapturedUtterance, generation: int, operation_id: UUID
     ) -> None:
         try:
             self._runtime.transition("transcribing", expected_state="listening")
             response = await self._stt.transcribe(
                 SpeechToTextRequest(
-                    pcm_s16le=audio,
-                    sample_rate=sample_rate,
+                    pcm_s16le=utterance.pcm_s16le,
+                    sample_rate=utterance.sample_rate,
                     language="pl",
-                    duration_ms=round(len(audio) / 2 / sample_rate * 1_000),
+                    duration_ms=utterance.duration_ms,
+                    vad_speech_start_ms=utterance.speech_start_ms,
+                    vad_speech_end_ms=utterance.speech_end_ms,
+                    pre_roll_ms=utterance.pre_roll_ms,
+                    post_roll_ms=utterance.post_roll_ms,
                 )
             )
             if not self._is_current(generation, operation_id):
@@ -375,7 +484,10 @@ class AudioPipeline:
                 )
             else:
                 reply = await self._conversation.respond(
-                    operation_id, response.transcript, mode="voice"
+                    operation_id,
+                    response.transcript,
+                    mode="voice",
+                    transcription_confidence=response.confidence.level,
                 )
                 answer = reply.text
                 spoken_answer = reply.spoken_text
@@ -441,6 +553,8 @@ class AudioPipeline:
         self._generation += 1
         self._operation_id = None
         self._capture.clear()
+        self._capture_pre_roll_ms = 0
+        self._clear_pre_roll()
         self._detector.reset()
         self._cancel_follow_up_timer()
         tasks = [task for task in (self._processing_task,) if task is not None]
@@ -481,9 +595,14 @@ class AudioPipeline:
             task.cancel()
         await self._stt.cancel()
         await self._tts.cancel()
+        close_stt = getattr(self._stt, "close", None)
+        if close_stt is not None:
+            await close_stt()
         if self._source is not None:
             await self._source.close()
         await asyncio.gather(*tasks, return_exceptions=True)
         self._capture_task = None
         self._processing_task = None
         self._capture.clear()
+        self._capture_pre_roll_ms = 0
+        self._clear_pre_roll()

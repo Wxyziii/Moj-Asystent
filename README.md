@@ -2,7 +2,7 @@
 
 A local-first, Polish-only desktop AI assistant for Windows with voice activation, an overlay chat interface, screen awareness, system telemetry, memory, and controlled tool execution.
 
-> Project status: **Milestone 11 complete — deterministic local watchers**
+> Project status: **Milestone 13 complete — Voice v2 implementation; manual V1 validation pending**
 
 ## Product goal
 
@@ -41,7 +41,8 @@ Example target interaction:
 - **Model runtime:** Ollama first, llama.cpp for advanced offload/tuning
 - **Wake word:** openWakeWord
 - **VAD:** Silero VAD
-- **STT:** faster-whisper, Polish forced (`pl`)
+- **STT:** faster-whisper, Polish forced (`pl`), preferred local
+  `large-v3-turbo` CUDA with explicit CPU fallback
 - **TTS:** Piper initially; XTTS-v2 evaluated later
 - **Memory:** SQLite
 - **Windows context:** UI Automation + active-window metadata + screenshots when required
@@ -74,12 +75,14 @@ The deployment workflow is in `.github/workflows/pages.yml`.
 
 ## Status
 
-Milestones 1–12 are implemented: the Windows overlay, authenticated local core,
+Milestones 1–13 are implemented: the Windows overlay, authenticated local core,
 Polish audio pipeline, trained custom wake name, local streamed Qwen chat, the
 typed tool/permission boundary and request-scoped active-window/UI Automation
 context, selective local vision, request-driven system diagnostics, explicit
 local SQLite memory/routines and deterministic proactive watchers with bounded
-notifications, plus deterministic hardware-aware Fast/Quality/Deep model
-routing. The final target-hardware model matrix and documented end-to-end V1
-interaction still need manual release-gate validation before the project is
-called reliable V1. See `docs/ROADMAP.md` for the exact scope.
+notifications, deterministic hardware-aware Fast/Quality/Deep model routing,
+plus Voice v2 CUDA/CPU STT routing, speech-edge buffering, local vocabulary,
+diagnostics and benchmark tooling. The final target-hardware voice/model matrix
+and documented end-to-end V1 interaction still need manual release-gate
+validation before the project is called reliable V1. See `docs/ROADMAP.md` for
+the exact scope.

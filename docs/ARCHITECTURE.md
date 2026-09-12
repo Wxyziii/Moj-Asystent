@@ -107,6 +107,23 @@ operation IDs for cancellation ownership, runs wake/VAD/STT/TTS model work off
 the event loop, suppresses wake input during playback and clears utterance
 buffers after every terminal path.
 
+Voice v2 keeps bounded pre-roll and post-roll PCM around the Silero boundary and
+passes one immutable utterance to a deterministic STT selector. The selector
+tries the configured local profiles in order—preferred Turbo CUDA, configured
+fallback, then Medium CPU compatibility—while every faster-whisper adapter
+remains forced to Polish and local-files-only. Profile status, vocabulary and
+bounded transcript-free diagnostics are served through authenticated loopback
+HTTP; CUDA/model selection never enters React or Protocol events. Protocol 1.4
+therefore remains unchanged.
+
+The active local vocabulary is a validated preference and becomes a
+faster-whisper hotword hint, not an automatic text-replacement layer. Inference
+per runtime is serialized, provider generations are invalidated on cancellation,
+and late pipeline results remain blocked by operation/generation ownership.
+Low-confidence speech is advisory input to ToolEngine: it can strengthen a
+`write.safe` decision to one-time confirmation but can never weaken the existing
+permission result.
+
 ### 4. Context engine
 
 Build one normalized, request-scoped context snapshot from available sources:

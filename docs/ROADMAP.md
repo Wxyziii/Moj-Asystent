@@ -290,6 +290,31 @@ those providers/configurations were not installed. The full documented V1
 interaction matrix therefore remains a manual release gate, and the project is
 not yet claimed reliable V1.
 
+## Milestone 13 — Voice v2 / high-accuracy Polish STT
+
+Status: `done`
+
+Deliverables:
+
+- preferred local `large-v3-turbo` CUDA `int8_float16` profile with explicit
+  CPU fallback and truthful readiness/fallback status;
+- bounded VAD pre/post roll, serialized cancellable inference and unchanged
+  RAM-only microphone privacy;
+- validated local vocabulary/hotword management in Settings → Voice;
+- bounded transcript-free diagnostics and conservative low-confidence action
+  confirmation hardening;
+- opt-in gitignored Polish benchmark for Medium CPU and Turbo CUDA compute
+  variants.
+
+The implementation and automated validation are complete without changing
+Protocol 1.4 or downloading model files. A target inspection confirmed the RTX
+3070 and cached Medium/`large-v3` models, but not `large-v3-turbo`; an in-memory
+`large-v3` probe found the Windows CUDA dependency `cublas64_12.dll` unavailable.
+The corrected provider now reports `cuda_unavailable`, and the default selector
+truthfully reports active Medium CPU fallback. Turbo CUDA accuracy/latency and
+the full real-microphone wake/follow-up matrix were therefore not manually run
+and remain explicit release-gate checks.
+
 ## V1 release gate
 
 Do not call the project V1 until all of these work reliably:
